@@ -1,0 +1,126 @@
+#############################################################################
+##  Author      :     P.S. Mandrik, IHEP
+##  Date        :     19/03/20
+##  Last Update :     19/03/20
+##  Version     :     1.0
+##  Wrapper and tester for c++ pmphysic.hh 
+##  to be used with python 2.7 and pygame
+#############################################################################
+
+from ctypes import *
+import os
+from random import randint
+import collections
+
+pmphysics_libc = cdll.LoadLibrary( os.path.abspath("modules/pmphysics.so") )
+pmphysics_libc.pmPhysic_PyTick.restype = py_object
+
+class pmPhysic ():
+  def __init__(self, msx, msy, mst, ts):
+    self.map_size_x = msx
+    self.map_size_y = msy
+    self.map_size_types = mst
+    self.tile_size = ts
+    self.map_data = (c_int * ((self.map_size_x*self.map_size_y*self.map_size_types) + 1))()
+    self.physic = None
+
+  def InitMapFrom3dArray( self, map_data_array ):
+    if True : 
+      print "python.pmPhysic.InitMapFrom3dArray():"
+      if self.map_size_x != len(map_data_array): "expected map X size", self.map_size_x, "not equal to given one", len(map_data_array)
+      if self.map_size_y != len(map_data_array[0]): "expected map Y size", self.map_size_x, "not equal to given one", len(map_data_array[0])
+      if self.map_size_types != len(map_data_array[0][0]): "expected map Z size", self.map_size_x, "not equal to given one", len(map_data_array[0][0])
+
+      map_size_xy = self.map_size_y*self.map_size_types
+      for x in xrange(self.map_size_x) :
+        for y in xrange(self.map_size_y) :
+          for t in xrange(self.map_size_types) :
+            # print "index", x*map_size_xy + y*self.map_size_types + t, x, y, t
+            # print self.map_data[ x*map_size_xy + y*self.map_size_types + t ]
+            # print map_data_array[x][y][t]
+            self.map_data[ x*map_size_xy + y*self.map_size_types + t ] = map_data_array[x][y][t]
+    
+    self.physic = pmphysics_libc.pmPhysic_new(self.map_size_x, self.map_size_y, self.map_size_types, self.tile_size, self.map_data)
+    pmphysics_libc.pmPhysic_PrintMap( self.physic, 0 )
+
+  def Tick(self, objects, bullets):
+    # PyObject* pmPhysic_PyTick(pmPhysic* physic, int N_objects, float * object_positions, float * object_speeds, int * object_tiles, float * object_r_sizes, int N_bullets, float * bullet_positions, int * bullet_tiles)
+
+    object_positions = (c_float * (len(objects) * 2))()
+    object_speeds = (c_float * (len(objects) * 2))()
+    object_tiles   = (c_int * (len(objects) * self.map_size_types))()
+    object_r_sizes = (c_float * len(objects))()
+    for i, obj in enumerate( objects ) :
+      object_positions[ 2*i   ] = obj.pos.x
+      object_positions[ 2*i+1 ] = obj.pos.y
+      object_speeds[ 2*i   ] = obj.speed.x
+      object_speeds[ 2*i+1 ] = obj.speed.y
+      object_r_sizes[ i ] = obj.size
+      
+    bullet_positions = (c_float * (len(bullets) * 2))()
+    bullet_tiles = (c_int * (len(objects) * self.tile_size))()
+    for i, obj in enumerate( bullets ) :
+      bullet_positions[ 2*i   ] = obj.pos.x
+      bullet_positions[ 2*i+1 ] = obj.pos.y
+
+    result = None
+    print "!!! 1"
+    result = pmphysics_libc.pmPhysic_PyTick( self.physic, len(objects), byref(object_positions), byref(object_speeds), byref(object_tiles), object_r_sizes, len(bullets), byref(bullet_positions), byref(bullet_tiles) )
+    print "!!! 2"
+    
+    for i, obj in enumerate( objects ) :
+      obj.pos.x   = object_positions[ 2*i   ] 
+      obj.pos.y   = object_positions[ 2*i+1 ] 
+      obj.speed.x = object_speeds[ 2*i   ] 
+      obj.speed.y = object_speeds[ 2*i+1 ]
+
+      index = i*self.map_size_types
+      for type in xrange(self.map_size_types):
+        obj.map_tiles[type] = object_tiles[index + type]
+
+    object_grid_pairs, bullet_grid_pairs = result
+
+    ### by constructions, the bullets_x_objects are sorted by bullets indexes first then by objects
+    bullet_x_object = {}
+    prev_id = -1
+    prev_list = []
+    for bullet_id, object_id in zip(*[iter(bullet_grid_pairs)]*2):
+      print "b, o, ids", bullet_id, object_id
+      if prev_id != bullet_id and prev_list:
+        bullet_x_object[prev_id] = prev_list
+        prev_list = []
+
+      prev_list += [ objects[object_id] ]
+      prev_id = bullet_id
+    bullet_x_object[prev_id] = prev_list
+
+    print "exit ... "
+    return result, object_positions, object_speeds, object_tiles, bullet_positions, bullet_tiles, bullet_x_object
+
+def main():
+  pmphysics_libc = cdll.LoadLibrary( os.path.abspath("pmphysics.so") )
+  pmphysics_libc.pmPhysic_new.argtypes = [c_int, c_int, c_int, c_int, POINTER(c_int)]
+
+  print pmphysics_libc.check()
+
+  print pmphysics_libc.__dict__
+  print pmphysics_libc.pmPhysic_new
+
+  map_size_x = 50
+  map_size_y = 50
+  map_size_types = 3
+  tile_size = 10
+  map_data = (c_int * ((map_size_x*map_size_y*map_size_types) + 1))()
+  for x in xrange(map_size_x):
+    for y in xrange(map_size_y):
+      map_data[ (map_size_y*map_size_types)*x + map_size_types * y ] = randint(0, 1);
+  # physic = pmphysics_libc.pmPhysic_new( map_size_x  )
+  physic = pmphysics_libc.pmPhysic_new(map_size_x, map_size_y, map_size_types, tile_size, map_data)
+
+  pmphysics_libc.pmPhysic_PrintMap( physic, 0 )
+
+if __name__ == "__main__" :
+  main()
+
+
+
