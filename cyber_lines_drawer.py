@@ -7,7 +7,7 @@
 
 # wget --no-check-certificate -N --content-disposition https://raw.githubusercontent.com/pmandrik/PMANDRIK_LIBRARY/master/pmlib_v2d.py
 # wget --no-check-certificate -N --content-disposition https://raw.githubusercontent.com/pmandrik/PMANDRIK_LIBRARY/master/pmlib_const.py
-from pmlib_v2d import *
+from PMANDRIK_LIBRARY.pmlib_v2d_py import *
 from random import uniform, randint, randrange, shuffle
 from copy import copy
 import pygame

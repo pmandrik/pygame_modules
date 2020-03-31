@@ -37,7 +37,7 @@ class FloorTicker():
         if x < 0 or x >= self.sx : continue
         y = self.spy + pos[1] + dir[1]*i
         if y < 0 or y >= self.sy : continue
-        answer += [ [x, y] ]
+        answer += [ (x, y) ]
       return answer
 
     nposes = []
@@ -50,7 +50,7 @@ class FloorTicker():
     self.drawn_tiles += self.new_drawn_tiles
     self.new_drawn_tiles = nposes
     if not len(self.new_drawn_tiles) : self.done = True
-    return self.new_drawn_tiles
+    return set(self.new_drawn_tiles)
     
   @TickWrapper
   def Tick_Alt(self):
@@ -61,7 +61,7 @@ class FloorTicker():
         if x < 0 or x >= self.sx : continue
         y = self.spy + pos[1] + dir[1]*i
         if y < 0 or y >= self.sy : continue
-        answer += [ [x, y] ]
+        answer += [ (x, y) ]
       return answer
 
     nposes = []
@@ -74,7 +74,7 @@ class FloorTicker():
     self.drawn_tiles += self.new_drawn_tiles
     self.new_drawn_tiles = nposes
     if not len(self.new_drawn_tiles) : self.done = True
-    return self.new_drawn_tiles
+    return set(self.new_drawn_tiles)
     pass
 
 if __name__== "__main__" :

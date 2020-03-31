@@ -24,6 +24,14 @@ class pmPhysic ():
     self.map_data = (c_int * ((self.map_size_x*self.map_size_y*self.map_size_types) + 1))()
     self.physic = None
 
+  # TODO update map tiles
+  #def __del__(self):
+  # 
+
+  # TODO delete self.ai
+  #def __del__(self):
+  # 
+
   def InitMapFrom3dArray( self, map_data_array ):
     if True : 
       print "python.pmPhysic.InitMapFrom3dArray():"
@@ -49,52 +57,62 @@ class pmPhysic ():
     object_positions = (c_float * (len(objects) * 2))()
     object_speeds = (c_float * (len(objects) * 2))()
     object_tiles   = (c_int * (len(objects) * self.map_size_types))()
-    object_r_sizes = (c_float * len(objects))()
+    object_sizes_xy = (c_float * (len(objects) * 2))()  
+    object_angles   = (c_float * len(objects))()
     for i, obj in enumerate( objects ) :
       object_positions[ 2*i   ] = obj.pos.x
       object_positions[ 2*i+1 ] = obj.pos.y
-      object_speeds[ 2*i   ] = obj.speed.x
-      object_speeds[ 2*i+1 ] = obj.speed.y
-      object_r_sizes[ i ] = obj.size
+      object_speeds[ 2*i   ] = obj.speed.x + obj.inertia.x + obj.inertia_short.x
+      object_speeds[ 2*i+1 ] = obj.speed.y + obj.inertia.y + obj.inertia_short.y
+      object_sizes_xy[ 2*i   ] = obj.size.x
+      object_sizes_xy[ 2*i+1 ] = obj.size.y
+      object_angles[i] = obj.angle
       
     bullet_positions = (c_float * (len(bullets) * 2))()
-    bullet_tiles = (c_int * (len(objects) * self.tile_size))()
+    bullet_tiles = (c_int * (len(bullets) * self.tile_size))()
     for i, obj in enumerate( bullets ) :
       bullet_positions[ 2*i   ] = obj.pos.x
       bullet_positions[ 2*i+1 ] = obj.pos.y
 
     result = None
-    print "!!! 1"
-    result = pmphysics_libc.pmPhysic_PyTick( self.physic, len(objects), byref(object_positions), byref(object_speeds), byref(object_tiles), object_r_sizes, len(bullets), byref(bullet_positions), byref(bullet_tiles) )
-    print "!!! 2"
+    # print "!!! 1"
+    result = pmphysics_libc.pmPhysic_PyTick( self.physic, len(objects), byref(object_positions), byref(object_speeds), byref(object_tiles), object_sizes_xy, object_angles, len(bullets), byref(bullet_positions), byref(bullet_tiles) )
+    # print "!!! 2"
     
     for i, obj in enumerate( objects ) :
       obj.pos.x   = object_positions[ 2*i   ] 
       obj.pos.y   = object_positions[ 2*i+1 ] 
-      obj.speed.x = object_speeds[ 2*i   ] 
+      obj.speed.x = object_speeds[ 2*i   ]
       obj.speed.y = object_speeds[ 2*i+1 ]
 
       index = i*self.map_size_types
       for type in xrange(self.map_size_types):
         obj.map_tiles[type] = object_tiles[index + type]
 
+    for i, obj in enumerate( bullets ) :
+      #FIXME
+      obj.map_tiles = [0]*self.map_size_types
+      index = i*self.map_size_types
+      for type in xrange(self.map_size_types):
+        obj.map_tiles[type] = bullet_tiles[index + type]
+
     object_grid_pairs, bullet_grid_pairs = result
 
     ### by constructions, the bullets_x_objects are sorted by bullets indexes first then by objects
     bullet_x_object = {}
     prev_id = -1
-    prev_list = []
+    prev_list = set()
     for bullet_id, object_id in zip(*[iter(bullet_grid_pairs)]*2):
-      print "b, o, ids", bullet_id, object_id
+      # print "b, o, ids", bullet_id, object_id
       if prev_id != bullet_id and prev_list:
         bullet_x_object[prev_id] = prev_list
-        prev_list = []
+        prev_list = set()
 
-      prev_list += [ objects[object_id] ]
+      prev_list.add( objects[object_id] )
       prev_id = bullet_id
     bullet_x_object[prev_id] = prev_list
 
-    print "exit ... "
+    # print "exit ... "
     return result, object_positions, object_speeds, object_tiles, bullet_positions, bullet_tiles, bullet_x_object
 
 def main():
