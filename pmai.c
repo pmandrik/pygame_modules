@@ -9,7 +9,17 @@
 #include <map>
 #include <cmath>
 
+#define DEBUG_CODE 1 
+
+#ifdef DEBUG_CODE 
+#include <iostream>
+#define DPRINT(x) (x)
+#else 
+#define DPRINT(x) do{}while(0)
+#endif
+
 static const int GRID_SIZE   =  4*15;
+static const int GRID_SIZE_2 = GRID_SIZE/2;
 
 static const int GRID_DEAPTH = 10; // number of types
 static const int BULLET_GRID_TYPE = 0; // zero is reserved for bullets
@@ -47,6 +57,24 @@ struct room_info{
     }
 
     ResetGrid();
+
+    //        GSS, SSF, SFF
+    // Tune 1   2,   2,   7
+
+    grid_spline_steps   = 1;
+    grid_spline_factor  = 2;
+    grid_fadeout_factor = 10; // 4 for 1, 6 for 2
+    /*
+grid_spline_steps  = 2;
+grid_spline_factor = 2;
+sum = 1.
+for i in xrange(-grid_spline_steps, grid_spline_steps+1, 1):
+  for j in xrange(-grid_spline_steps, grid_spline_steps+1, 1):
+    if i == 0 and j == 0 : continue;
+    sum += 1. / ( abs(grid_spline_factor * i) + abs(grid_spline_factor * j) )
+
+print sum
+    */
   }
 
   int id;
@@ -57,6 +85,7 @@ struct room_info{
   int grid_size_x, grid_size_y;
   int *** grid;
   int *** grid_back;
+  int grid_spline_steps, grid_spline_factor, grid_fadeout_factor;
   int maximums[GRID_DEAPTH], max_x[GRID_DEAPTH], max_y[GRID_DEAPTH];
   int minimums[GRID_DEAPTH], min_x[GRID_DEAPTH], min_y[GRID_DEAPTH];
 
@@ -78,9 +107,11 @@ struct room_info{
     for(int k = 0; k < GRID_DEAPTH; k++){
       for(int i = 0; i < grid_size_x; i++)
         for(int j = 0; j < grid_size_y; j++){
+          //grid[i][j][k] -= 1;
+          //grid[i][j][k] -= grid[i][j][k]/10;
+          grid[i][j][k] /= grid_fadeout_factor;
           grid[i][j][k] = std::max(0, grid[i][j][k]);
           grid[i][j][k] = std::min(5000, grid[i][j][k]);
-          grid[i][j][k] /= 4;
         }
       maximums[k] = 0;
       minimums[k] = 0;
@@ -102,7 +133,7 @@ struct room_info{
   }
 
   void CheckDirection(const int & type, const int & x, const int & y, int & mmax, int & mmin, int & dx_max, int & dy_max, int & dx_min, int & dy_min){
-    if(x < 0 or x > grid_size_x or y < 0 or y > grid_size_y or type < 0 or type > GRID_DEAPTH) return;
+    if(x < 0 or x >= grid_size_x or y < 0 or y >= grid_size_y or type < 0 or type >= GRID_DEAPTH) return;
     if( grid[x][y][type] > mmax ){
       mmax = grid[x][y][type];
       dx_max = x;
@@ -116,11 +147,12 @@ struct room_info{
     return;
   }
 
-  void SetLocalDirections(const int & type, const float & px, const float & py, int & dx_max, int & dy_max, int & dx_min, int & dy_min, int & mmax, int & mmin){
+  void SetLocalDirections(const int & type, const int & px, const int & py, int & dx_max, int & dy_max, int & dx_min, int & dy_min, int & mmax, int & mmin){
     int x = (px - start_x) / GRID_SIZE;
     int y = (py - start_y) / GRID_SIZE;
-    if(x < 0 or x > grid_size_x or y < 0 or y > grid_size_y or type < 0 or type > GRID_DEAPTH) return;
+    if(x < 0 or x >= grid_size_x or y < 0 or y >= grid_size_y or type < 0 or type >= GRID_DEAPTH) return;
 
+    // DPRINT( printf("SetLocalDirections() = %d %d %d %d \n", x, y, grid_size_x, grid_size_y) );
     mmax = grid[x][y][type];
     mmin = grid[x][y][type];
     dx_max = x;
@@ -137,20 +169,33 @@ struct room_info{
     CheckDirection(type, x+1, y-1, mmax, mmin, dx_max, dy_max, dx_min, dy_min);
     CheckDirection(type, x+1, y+1, mmax, mmin, dx_max, dy_max, dx_min, dy_min);
     
-    dx_max -= x;
-    dy_max -= y;
-    dx_min -= x;
-    dy_min -= y;
+    int shift_from_center_x = (px - start_x) % GRID_SIZE - GRID_SIZE_2;
+    int shift_from_center_y = (py - start_y) % GRID_SIZE - GRID_SIZE_2;
+    dx_max = (dx_max - x)*GRID_SIZE + shift_from_center_x;
+    dy_max = (dy_max - y)*GRID_SIZE + shift_from_center_y;
+    dx_min = (dx_min - x)*GRID_SIZE + shift_from_center_x;
+    dy_min = (dy_min - y)*GRID_SIZE + shift_from_center_y;
   }
 
-  void AddToGridSafe(const int & px, const int & py, const int & type, const int & value){
+  int GetGridValueSafe(const int & px, const int & py, const int & type){
     int x = (px - start_x) / GRID_SIZE;
     int y = (py - start_y) / GRID_SIZE;
-    if(x < 0 or x > grid_size_x or y < 0 or y > grid_size_y or type < 0 or type > GRID_DEAPTH){
-      printf("room_ifo.AddToGridSafe(): invalid grid request %d %d %d for grid %d %d %d %d \n", px, py, type, grid_size_x, grid_size_y, GRID_SIZE, GRID_DEAPTH);
-      return;
+    if(x < 0 or x >= grid_size_x or y < 0 or y >= grid_size_y or type < 0 or type >= GRID_DEAPTH){
+      DPRINT( printf("room_info.GetGridValueSafe(): invalid grid request %d %d %d for grid %d %d %d %d \n", px, py, type, grid_size_x, grid_size_y, GRID_SIZE, GRID_DEAPTH) );
+      return 0;
+    }
+    return grid[x][y][type];
+  }
+
+  bool AddToGridSafe(const int & px, const int & py, const int & type, const int & value){
+    int x = (px - start_x) / GRID_SIZE;
+    int y = (py - start_y) / GRID_SIZE;
+    if(x < 0 or x >= grid_size_x or y < 0 or y >= grid_size_y or type < 0 or type >= GRID_DEAPTH){
+      DPRINT( printf("room_info.AddToGridSafe(): invalid grid request %d %d %d for grid %d %d %d %d %d \n", px, py, type, start_x, start_y, start_x+grid_size_x*GRID_SIZE, start_y+grid_size_y*GRID_SIZE, GRID_DEAPTH) );
+      return false;
     }
     grid[x][y][type] += value;
+    return true;
     //if( grid[x][y][type] > maximums[type] ){
     //  maximums[type] = grid[x][y][type];
     //  max_x[type] = x;
@@ -162,11 +207,16 @@ struct room_info{
     for(int k = 0; k < GRID_DEAPTH; k++){
       for(int x = 0; x < grid_size_x; x++){
         for(int y = 0; y < grid_size_y; y++){
+          if(not k and not x and not y)
+            DPRINT( printf("room_info.PostProcess %d %d %d\n", id, grid_back[x][y][k], grid[x][y][k]) );
           grid_back[x][y][k] = grid[x][y][k];
-          for(int dx = std::max(0, x-1); dx <= std::min(x+1, grid_size_x-1); dx++)
-            for(int dy = std::max(0, y-1); dy <= std::min(y+1, grid_size_y-1); dy++){
-              if( dx-x + dy-y == 0 ) continue;
-              grid_back[x][y][k] += grid[dx][dy][k] / (2*std::abs(dx-x) + 2*std::abs(dy-y));
+          for(int dx = -grid_spline_steps; dx <= grid_spline_steps; dx++)
+            for(int dy = -grid_spline_steps; dy <= grid_spline_steps; dy++){
+              if( dx == 0 and dy == 0 ) continue;
+              if( (x + dx) < 0 or (y + dy) < 0 or (x + dx) >= grid_size_x or (y + dy) >= grid_size_y )
+                grid_back[x][y][k] += grid[x][y][k] / (grid_spline_factor*std::abs(dx) + grid_spline_factor*std::abs(dy));
+              else 
+                grid_back[x][y][k] += grid[x+dx][y+dy][k] / (grid_spline_factor*std::abs(dx) + grid_spline_factor*std::abs(dy));
             }
         }
       }
@@ -210,9 +260,31 @@ struct room_info{
 
 class ObjectAI {
   public:
-  ObjectAI(const int & grid_type, const int & grid_value){
+  ObjectAI(const int & grid_type, const int & value_,
+    int *grid_value_,
+    int *dir_local_max_x_, int *dir_local_max_y_, int *local_max_,
+    int *dir_local_min_x_, int *dir_local_min_y_, int *local_min_,
+    int *dist_local_max_x_, int *dist_local_max_y_, int *dist_local_min_x_, int *dist_local_min_y_
+  ){
     type = grid_type;
-    value = grid_value;
+    value = value_;
+
+    grid_value = grid_value_;
+
+    dir_local_max_x = dir_local_max_x_;
+    dir_local_max_y = dir_local_max_y_;
+    local_max = local_max_;
+    dir_local_min_x = dir_local_min_x_;
+    dir_local_min_y = dir_local_min_y_;
+    local_min = local_min_;
+
+    dist_local_max_x = dist_local_max_x_;
+    dist_local_max_y = dist_local_max_y_;
+    dist_local_min_x = dist_local_min_x_;
+    dist_local_min_y = dist_local_min_y_;
+
+    pos_x = 0;
+    pos_y = 0;
   }
 
   void Update(const int & pos_x_, const int & pos_y_, const int & room_id_){
@@ -225,11 +297,21 @@ class ObjectAI {
   int type, value;
   int room_id, id;
 
+  int *grid_value;
+
+  int *dir_local_max_x, *dir_local_max_y, *local_max;
+  int *dir_local_min_x, *dir_local_min_y, *local_min;
+
+  int *dist_local_max_x, *dist_local_max_y;
+  int *dist_local_min_x, *dist_local_min_y;
+
+/*
   int dir_local_max_x[GRID_DEAPTH], dir_local_max_y[GRID_DEAPTH], local_max[GRID_DEAPTH];
   int dir_local_min_x[GRID_DEAPTH], dir_local_min_y[GRID_DEAPTH], local_min[GRID_DEAPTH];
 
-  float dist_local_max_x[GRID_DEAPTH], dist_local_max_y[GRID_DEAPTH];
-  float dist_local_min_x[GRID_DEAPTH], dist_local_min_y[GRID_DEAPTH];
+  int dist_local_max_x[GRID_DEAPTH], dist_local_max_y[GRID_DEAPTH];
+  int dist_local_min_x[GRID_DEAPTH], dist_local_min_y[GRID_DEAPTH];
+*/
 };
 
 class pmAI {
@@ -239,36 +321,52 @@ class pmAI {
       max_astars_per_tick = 5;
       id_counter = 0;
       printf("ok\n");
+      raytracer_bullets_steps = 5;
     }
 
-    void Tick(const int & N_bullets, int * bullet_positions, int * bullet_rooms){
+    void Tick(const int & N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
+      DPRINT( std::cout << "pmAI.Tick with " << N_bullets << "bullets" << std::endl );
       for(unsigned int i = 0; i < rooms.size(); ++i)
         //rooms[i].ResetGrid();
         rooms[i].FadeOutGrid();
 
       // AI local
       // calculate the contribution of bullets to the rooms grid
+      float pos_x, pos_y;
+      float speed_x, speed_y;
       for(int i = 0, i_max = 2*N_bullets; i < i_max; i+=2){
         room_info & room = rooms[ bullet_rooms[i/2] ]; // FIXME
-        room.AddToGridSafe(bullet_positions[ i ], bullet_positions[ i+1 ], BULLET_GRID_TYPE, 100);
+        pos_x = bullet_positions[ i ];
+        pos_y = bullet_positions[ i+1 ];
+        speed_x = bullet_speeds[ i ];
+        speed_y = bullet_speeds[ i+1 ];
+
+        DPRINT( printf("pmAI_Tick bullet %d %f %f %f %f \n", bullet_rooms[i/2], pos_x, pos_y, speed_x, speed_y) );
+        room.AddToGridSafe(pos_x, pos_y, BULLET_GRID_TYPE, 100);
+
+        for(int step = 0; step < raytracer_bullets_steps; step++ ){
+          pos_x += speed_x*10;
+          pos_y += speed_y*10;
+          if( not room.AddToGridSafe(pos_x, pos_y, BULLET_GRID_TYPE, 100-10*raytracer_bullets_steps) ) break;
+        }
       }
       // calculate the contribution of objects to the rooms grid
       for(std::map<unsigned int, ObjectAI*>::iterator it = objects.begin(); it != objects.end(); ++it){
         ObjectAI * object = it->second;
-        room_info & room = rooms[ object->room_id ];
-        room.AddToGridSafe(object->pos_x, object->pos_y, object->type, object->value);
+        // room_info & room = rooms[ object->room_id ]; FIXME
+        // room.AddToGridSafe(object->pos_x, object->pos_y, object->type, object->value);
       }
 
       // find rooms grid maximums and minimums
       // apply smoothing
       for(unsigned int i = 0; i < rooms.size(); ++i)
         rooms[i].PostProcess();
-      return;
 
       // calculate the direction to nearests maximums, minimums
-      // get the path to global maximums, minimums
+      DPRINT( printf("calculate the direction to nearests maximums, minimums\n") );
       for(std::map<unsigned int, ObjectAI*>::iterator it = objects.begin(); it != objects.end(); ++it){
         ObjectAI * object = it->second;
+        DPRINT( printf("process object with id, room id = %d %d \n", object->id, object->room_id) );
         room_info & room = rooms[ object->room_id ]; // FIXME
 
         for(int type = 0; type < GRID_DEAPTH; type++){
@@ -277,10 +375,18 @@ class pmAI {
                                         object->dir_local_max_x[type], object->dir_local_max_y[type],
                                         object->dir_local_min_x[type], object->dir_local_min_y[type], 
                                         object->local_max[type],       object->local_min[type] );
+          // distance to global maximums, minimums
+          // *dist_local_max_x, *dist_local_max_y;
+          // *dist_local_min_x, *dist_local_min_y;
+        }
+
+        DPRINT( printf("pmAI_Tick Objects %d %d %d %d %d \n", object->room_id, object->pos_x, object->pos_y, object->dir_local_min_x[0], object->dir_local_min_y[0]) );
+
+        // set the value for current objects position
+        for(int type = 0; type < GRID_DEAPTH; type++){
+          object->grid_value[ type ] = room.GetGridValueSafe(object->pos_x, object->pos_y, type);
         }
       }
-
-      // get the path to global maximums, minimums - call room_info.SetMinMaxPositions() for every room outside this code
 
       // get path [point sequences] to the target within the room
 
@@ -291,6 +397,7 @@ class pmAI {
       // get path [rooms ids] to target
       
       // 
+      DPRINT(std::cout << "pmAI.Tick done ..." << std::endl );
     }
 
   int AddRoom(int px, int py, int sx, int sy){
@@ -324,14 +431,23 @@ class pmAI {
   }
 
 
-  ObjectAI * AddObject(const int & grid_type, const int & grid_value){
+  ObjectAI * AddObject(const int & grid_type, const int & value, 
+      int *grid_value_,
+      int *dir_local_max_x_, int *dir_local_max_y_, int *local_max_,
+      int *dir_local_min_x_, int *dir_local_min_y_, int *local_min_,
+      int *dist_local_max_x_, int *dist_local_max_y_, int *dist_local_min_x_, int *dist_local_min_y_){
     while(true){
       std::map<unsigned int, ObjectAI*>::iterator it = objects.find( id_counter );
       if( it == objects.end() ) break;
       id_counter++;
     }
 
-    ObjectAI * obj = new ObjectAI(grid_type, grid_value);
+    ObjectAI * obj = new ObjectAI(grid_type, value,
+        grid_value_,
+        dir_local_max_x_, dir_local_max_y_, local_max_,
+        dir_local_min_x_, dir_local_min_y_, local_min_,
+        dist_local_max_x_, dist_local_max_y_, dist_local_min_x_, dist_local_min_y_);
+
     objects[id_counter] = obj;
     obj->id = id_counter;
     id_counter++;
@@ -433,6 +549,7 @@ class pmAI {
 
   int tile_size;
   int max_astars_per_tick, done_astars_per_tick;
+  int raytracer_bullets_steps;
   std::vector<room_info> rooms;
 
   unsigned int id_counter;
@@ -463,8 +580,15 @@ class pmAI {
       return ai->GetRoomPath(start_room_id, end_room_id);
     }
 
-    ObjectAI * pmAI_AddObject(pmAI * ai, int grid_type, int grid_value){
-      return ai->AddObject(grid_type, grid_value);
+    ObjectAI * pmAI_AddObject(pmAI * ai, int grid_type, int value, 
+      int *grid_value,
+      int *dir_local_max_x_, int *dir_local_max_y_, int *local_max_,
+      int *dir_local_min_x_, int *dir_local_min_y_, int *local_min_,
+      int *dist_local_max_x_, int *dist_local_max_y_, int *dist_local_min_x_, int *dist_local_min_y_){
+      return ai->AddObject(grid_type, value, grid_value, 
+        dir_local_max_x_, dir_local_max_y_, local_max_,
+        dir_local_min_x_, dir_local_min_y_, local_min_,
+        dist_local_max_x_, dist_local_max_y_, dist_local_min_x_, dist_local_min_y_);
     }
 
     void pmAI_RemoveObject(pmAI * ai, ObjectAI * obj){
@@ -489,8 +613,16 @@ class pmAI {
       return answer;
     }
 
-    void pmAI_Tick(pmAI * ai, int N_bullets, int * bullet_positions, int * bullet_rooms){
-      ai->Tick(N_bullets, bullet_positions, bullet_rooms);
+    void pmAI_Tick(pmAI * ai, int N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
+      ai->Tick(N_bullets, bullet_positions, bullet_speeds, bullet_rooms);
+    }
+
+    void pmAI_UpdateObjects(int N_objects, ObjectAI ** objects, int * object_positions, int * object_rooms){
+      // update all objects at once
+      for(int i = 0; i < N_objects; i++){
+        printf("pmAI_UpdateObjects %d %d %d %d \n", N_objects, object_positions[2*i], object_positions[2*i+1], object_rooms[i]);
+        objects[i]->Update( object_positions[2*i], object_positions[2*i+1], object_rooms[i] );
+      }
     }
   }
 

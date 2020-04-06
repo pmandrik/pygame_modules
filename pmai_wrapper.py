@@ -21,9 +21,62 @@ except:
 pmai_libc.pmAI_GetRoomPath.restype = py_object
 pmai_libc.pmAI_GetRoomGrid.restype = py_object
 
+
+# pmai_libc.pmAI_UpdateObjects.argtypes = [c_int, POINTER(c_void_p), POINTER(c_int), POINTER(c_int)]
+
+# static const int GRID_DEAPTH = 10; // number of types
+GRID_DEAPTH = 10
+
+class ObjectAI(Structure):
+  _fields_ = [("pos_x", c_int), ("pos_y", c_int),
+              ("type", c_int), ("value", c_int),
+              ("room_id", c_int), ("id", c_int),
+              ("grid_value", POINTER(c_int)),
+              ("dir_local_max_x", POINTER(c_int)), ("dir_local_max_y", POINTER(c_int)), ("local_max", POINTER(c_int)),
+              ("dir_local_min_x", POINTER(c_int)), ("dir_local_min_y", POINTER(c_int)), ("local_min", POINTER(c_int)),
+              ("dist_local_max_x", POINTER(c_int)), ("dist_local_max_y", POINTER(c_int)),
+              ("dist_local_min_x", POINTER(c_int)), ("dist_local_min_y", POINTER(c_int)),
+    ]
+
+pmai_libc.pmAI_AddObject.restype = POINTER( ObjectAI )
+
+class pmAIObject ():
+  def __init__(self):
+    self.object_ai = None
+
+    self.grid_value = (c_int * GRID_DEAPTH)()
+
+    self.dir_local_max_x = (c_int * GRID_DEAPTH)()
+    self.dir_local_max_y = (c_int * GRID_DEAPTH)()
+    self.local_max = (c_int * GRID_DEAPTH)()
+    self.dir_local_min_x = (c_int * GRID_DEAPTH)()
+    self.dir_local_min_y = (c_int * GRID_DEAPTH)()
+    self.local_min = (c_int * GRID_DEAPTH)()
+
+    # FIXME
+    self.dist_local_max_x = (c_int * GRID_DEAPTH)()
+    self.dist_local_max_y = (c_int * GRID_DEAPTH)()
+    self.dist_local_min_x = (c_int * GRID_DEAPTH)()
+    self.dist_local_min_y = (c_int * GRID_DEAPTH)()
+
 class pmAI ():
   def __init__(self):
     self.ai = pmai_libc.pmAI_new()
+
+  def AddAIObject(self, obj, grid_type, grid_value):
+    obj.object_ai = pmai_libc.pmAI_AddObject(self.ai, grid_type, grid_value,
+          byref(obj.grid_value),
+          byref(obj.dir_local_max_x), byref(obj.dir_local_max_y), byref(obj.local_max),
+          byref(obj.dir_local_min_x), byref(obj.dir_local_min_y), byref(obj.local_min),
+          byref(obj.dist_local_max_x), byref(obj.dist_local_max_y),
+          byref(obj.dist_local_min_x), byref(obj.dist_local_min_y)
+      )
+
+  def RemoveAIObject(self, obj ):
+    pmAIObject.object_ai = pmai_libc.pmAI_RemoveObject(self.ai, obj.object_ai)
+
+  def UpdateAIObject(self, obj ):
+    pmai_libc.UpdateAIObjects( obj.object_ai )
 
   def GetRoomGrid(self, room, type):
     answer = pmai_libc.pmAI_GetRoomGrid(self.ai, room, type)
@@ -35,7 +88,7 @@ class pmAI ():
       for j in xrange(size_y):
         column += [ answer[4][i*size_y + j] ]
       grid += [ column ]
-    print grid
+    # print grid
     return answer[0], answer[1], answer[2], answer[3], grid
 
   def GetRoomPath(self, start_id, end_id):
@@ -63,16 +116,31 @@ class pmAI ():
   #def __del__(self):
   # 
 
-  def Tick(self, bullets):
+  def Tick(self, objects, bullets):
+    object_positions = (c_int * (len(objects) * 2))()
+    object_tiles     = (c_int * (len(objects)    ))()
+    object_ais       = (POINTER(ObjectAI) * (len(objects) ))()
+    for i, obj in enumerate( objects ) :
+      object_positions[ 2*i   ] = int(obj.pos.x)
+      object_positions[ 2*i+1 ] = int(obj.pos.y)
+      object_tiles[i] = obj.pos_room-1 #FIXME
+      object_ais[i]   = obj.object_ai 
+
     bullet_positions = (c_int * (len(bullets) * 2))()
+    bullet_speeds    = (c_float * (len(bullets) * 2))()
     bullet_tiles     = (c_int * (len(bullets)    ))()
+
     for i, obj in enumerate( bullets ) :
       bullet_positions[ 2*i   ] = int(obj.pos.x)
       bullet_positions[ 2*i+1 ] = int(obj.pos.y)
+      bullet_speeds[ 2*i   ] = int(obj.speed.x)
+      bullet_speeds[ 2*i+1 ] = int(obj.speed.y)
       bullet_tiles[i] = obj.room_id-1 #FIXME
 
     # pmAI * ai, int N_bullets, float * bullet_positions, int * bullet_rooms
-    pmai_libc.pmAI_Tick(self.ai, len(bullets), bullet_positions, bullet_tiles)
+    print object_ais
+    if object_ais : pmai_libc.pmAI_UpdateObjects(len(objects), object_ais, object_positions, object_tiles)
+    pmai_libc.pmAI_Tick(self.ai, len(bullets), bullet_positions, bullet_speeds, bullet_tiles)
     
     pass
 
