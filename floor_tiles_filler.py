@@ -22,27 +22,24 @@ from random import randint, randrange, choice
 #     return new grid filled with grid_1 items and then with grid_2, grids are expected to have the same y,x sizes
 
 class FloorFiller():
-  def __init__(self, size_x, size_y):
-    self.size_x, self.size_y = size_x, size_y
-
   def DiceDirection(self, direction) :
     if direction :  return 1 - direction, randrange(-1, 2, 2)
     return randint(0, 1), randrange(-1, 2, 2)
 
-  def MovePoint(self, point, direct):
+  def MovePoint(self, point, direct, size_x, size_y):
     direction, speed = self.DiceDirection(None)
     if direct > -5: direction = direct
     answer_x = point[0] + speed * direction
     answer_y = point[1] + speed * (1 - direction)
 
     if answer_x < 0           : answer_x = 2
-    if answer_x >= self.size_x : answer_x = self.size_x-3
+    if answer_x >= size_x     : answer_x = size_x-3
     if answer_y < 0           : answer_y = 2
-    if answer_y >= self.size_y : answer_y = self.size_y-3
+    if answer_y >= size_y     : answer_y = size_y-3
 
     return [answer_x, answer_y], direction
 
-  def GetNextPoint(self, point, direction, speed):
+  def GetNextPoint(self, point, direction, speed, size_x, size_y):
     if direction < -5:
       direction, speed = self.DiceDirection(None)
 
@@ -54,14 +51,14 @@ class FloorFiller():
     if answer_x < 0           : 
       answer_x = 0
       direction, speed = self.DiceDirection( direction )
-    if answer_x >= self.size_x : 
-      answer_x = self.size_x-1
+    if answer_x >= size_x : 
+      answer_x =   size_x-1
       direction, speed = self.DiceDirection( direction )
     if answer_y < 0           : 
       answer_y = 0
       direction, speed = self.DiceDirection( direction )
-    if answer_y >= self.size_y : 
-      answer_y = self.size_y-1
+    if answer_y >= size_y : 
+      answer_y = size_y-1
       direction, speed = self.DiceDirection( direction )
 
     return [answer_x, answer_y], [direction, speed]
@@ -73,12 +70,12 @@ class FloorFiller():
     point[1] += p[1]
     return point, divider + 1
 
-  def Fill(self, room_size_x, room_size_y):
-    point = [ randint(0, self.size_x), randint(0, self.size_y) ]
+  def Fill(self, room_size_x, room_size_y, size_x, size_y ):
+    point = [ randint(0, size_x), randint(0, size_y) ]
     points_line = []
     speed_line  = []
     for x in xrange( room_size_x ):
-      point, speed = self.GetNextPoint( point, -999, None )
+      point, speed = self.GetNextPoint( point, -999, None, size_x, size_y )
       points_line += [ point ]
       speed_line  += [ speed ]
     
@@ -90,7 +87,7 @@ class FloorFiller():
       for x in xrange( room_size_x ):
         prev_point = prev_points_line[x]
         direction, speed = speed_line[x]
-        point, speed_line[x] = self.GetNextPoint( prev_point, direction, speed )
+        point, speed_line[x] = self.GetNextPoint( prev_point, direction, speed, size_x, size_y )
 
         divider = 1
         if x : 
@@ -105,15 +102,15 @@ class FloorFiller():
 
         direction = -999
         if x and points_line[x-1][0] == point[0] and points_line[x-1][1] == point[1]:
-          point, direction = self.MovePoint( point, direction )
+          point, direction = self.MovePoint( point, direction, size_x, size_y )
 
         if direction > -1 : direction = 1 - direction
         if prev_point[0] == point[0] and prev_point[1] == point[1]:
-          point, direction = self.MovePoint( point, direction )
+          point, direction = self.MovePoint( point, direction, size_x, size_y )
 
         if direction > -1 : direction = 1 - direction
         if x and points_line[x-1][0] == point[0] and points_line[x-1][1] == point[1]:
-          point, direction = self.MovePoint( point, direction )
+          point, direction = self.MovePoint( point, direction, size_x, size_y )
 
         if x and points_line[x-1][0] == point[0] and points_line[x-1][1] == point[1]: print "1"
         if prev_point[0] == point[0] and prev_point[1] == point[1]: print "2"
@@ -123,12 +120,19 @@ class FloorFiller():
     return grid
 
   def FillWithRects(self, room_size_x, room_size_y, tiles_collections, dencity=0.5, mode="def"):
+    ### fill grid with nulles
+    grid = []
+    for y in xrange( room_size_y ):
+      line  = [ [] for x in xrange( room_size_x ) ]
+      grid += [ line ]
+
     ### prepare rect collections for sampling with unweighted python 2.7 choice
+    if not tiles_collections : return grid
     rects = []
     rooms_square = 0
     for collection in tiles_collections:
       # [size_x, size_y, postfix, relative_probability]
-      if len(collection) < 3 : return
+      if len(collection) < 3 : return grid
       probability = 1
       try   : probability = collection[3]
       except: pass
@@ -136,12 +140,6 @@ class FloorFiller():
       rooms_square += int(probability) * collection[0] * collection[1]
     rooms_square = float(rooms_square) / len( rects )
     N_tries = int(room_size_x * room_size_y * dencity / rooms_square)
-
-    ### fill grid with nulles
-    grid = []
-    for y in xrange( room_size_y ):
-      line  = [ [] for x in xrange( room_size_x ) ]
-      grid += [ line ]
       
     ### fill the grid with rects
     booked_points = {}
@@ -228,8 +226,8 @@ if __name__== "__main__" :
   room_size_y = 30
   tile_size = 15
 
-  ff = FloorFiller( pallet_size_x, pallet_size_y )
-  ff.Fill( room_size_x, room_size_y )
+  ff = FloorFiller()
+  ff.Fill( room_size_x, room_size_y, pallet_size_x, pallet_size_y )
 
   from pygame import *
   init();
@@ -242,8 +240,8 @@ if __name__== "__main__" :
 
     screen.fill( (255, 255, 255) )
 
-    ff = FloorFiller( pallet_size_x, pallet_size_y )
-    grid = ff.Fill( room_size_x, room_size_y )
+    ff = FloorFiller( )
+    grid = ff.Fill( room_size_x, room_size_y, pallet_size_x, pallet_size_y )
     rects = [ [randint(1, 4), randint(1, 4), (25*i, 0, 255 - 20 * i), 1+i] for i in xrange(10) ]
     print rects
     grid_rects = ff.FillWithRects( room_size_x, room_size_y, rects, 0.35, "connected_once" ) # "connected"
