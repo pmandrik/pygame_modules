@@ -9,7 +9,7 @@
 #include <map>
 #include <cmath>
 
-#define DEBUG_CODE 1 
+// #define DEBUG_CODE 1 
 
 #ifdef DEBUG_CODE 
 #include <iostream>
@@ -44,7 +44,8 @@ struct room_info{
     if(size_x % GRID_SIZE) grid_size_x++;
     if(size_y % GRID_SIZE) grid_size_y++;
 
-    printf( "room_info \n");
+    printf( "pmai.c:room_info() ...\n");
+
     grid = new int ** [grid_size_x]; // [grid_size_x][grid_size_y][GRID_DEAPTH];
     grid_back = new int ** [grid_size_x]; // [grid_size_x][grid_size_y][GRID_DEAPTH];
     for(int i = 0; i < grid_size_x; i++){
@@ -75,6 +76,7 @@ for i in xrange(-grid_spline_steps, grid_spline_steps+1, 1):
 
 print sum
     */
+    printf( "pmai.c:room_info() ... ok\n");
   }
 
   int id;
@@ -285,6 +287,8 @@ class ObjectAI {
 
     pos_x = 0;
     pos_y = 0;
+
+    room_id = -1;
   }
 
   void Update(const int & pos_x_, const int & pos_y_, const int & room_id_){
@@ -322,6 +326,8 @@ class pmAI {
       id_counter = 0;
       printf("ok\n");
       raytracer_bullets_steps = 5;
+
+      DPRINT( std::cout << "QWERTY + " << rooms.size() << std::endl );
     }
 
     void Tick(const int & N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
@@ -367,7 +373,7 @@ class pmAI {
       for(std::map<unsigned int, ObjectAI*>::iterator it = objects.begin(); it != objects.end(); ++it){
         ObjectAI * object = it->second;
         DPRINT( printf("process object with id, room id = %d %d \n", object->id, object->room_id) );
-        room_info & room = rooms[ object->room_id ]; // FIXME
+        room_info & room = rooms.at( object->room_id ); // FIXME
 
         for(int type = 0; type < GRID_DEAPTH; type++){
           // calculate the direction to nearests maximums, minimums
@@ -557,49 +563,67 @@ class pmAI {
 };
 
   extern "C" {
-    pmAI * pmAI_new(  ) {
+    void * pmAI_new() {
+      DPRINT( std::cout << "pmAI_new()" << std::endl );
       pmAI * answer = new pmAI( );
-      printf("%d \n", answer);
       return answer;
     }
 
     // start position of the room (with minimum x,y value), for example top left corner, absolute value of pos and size (not in gamemap tiles!)
-    int pmAI_AddRoom(pmAI * ai, int start_pos_x, int start_pos_y, int size_x, int size_y){
-      return ai->AddRoom(start_pos_x, start_pos_y, size_x, size_y);
+    int pmAI_AddRoom(void * ai, int start_pos_x, int start_pos_y, int size_x, int size_y){
+      DPRINT( std::cout << "pmAI_AddRoom()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      int answer = ai_->AddRoom(start_pos_x, start_pos_y, size_x, size_y);
+      DPRINT( std::cout << "pmAI_AddRoom() " << answer << std::endl );
+      return answer;
     }
 
-    bool pmAI_SetRoomConnections(pmAI * ai, int room_id, int n_connected_rooms, int * connected_rooms_ids){
-      return ai->SetRoomConnections(room_id, n_connected_rooms, connected_rooms_ids);
+    bool pmAI_SetRoomConnections(void * ai, int room_id, int n_connected_rooms, int * connected_rooms_ids){
+      DPRINT( std::cout << "pmAI_SetRoomConnections()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      return ai_->SetRoomConnections(room_id, n_connected_rooms, connected_rooms_ids);
     }
 
-    void pmAI_PrintRooms(pmAI * ai){
-      ai->PrintRooms();
+    void pmAI_PrintRooms(void * ai){
+      DPRINT( std::cout << "pmAI_PrintRooms()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      ai_->PrintRooms();
     }
 
-    PyObject* pmAI_GetRoomPath(pmAI * ai, int start_room_id, int end_room_id){
-      return ai->GetRoomPath(start_room_id, end_room_id);
+    PyObject* pmAI_GetRoomPath(void * ai, int start_room_id, int end_room_id){
+      DPRINT( std::cout << "pmAI_GetRoomPath()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      return ai_->GetRoomPath(start_room_id, end_room_id);
     }
 
-    ObjectAI * pmAI_AddObject(pmAI * ai, int grid_type, int value, 
+    ObjectAI * pmAI_AddObject(void * ai, int grid_type, int value, 
       int *grid_value,
       int *dir_local_max_x_, int *dir_local_max_y_, int *local_max_,
       int *dir_local_min_x_, int *dir_local_min_y_, int *local_min_,
       int *dist_local_max_x_, int *dist_local_max_y_, int *dist_local_min_x_, int *dist_local_min_y_){
-      return ai->AddObject(grid_type, value, grid_value, 
+      DPRINT( std::cout << "pmAI_AddObject()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      return ai_->AddObject(grid_type, value, grid_value, 
         dir_local_max_x_, dir_local_max_y_, local_max_,
         dir_local_min_x_, dir_local_min_y_, local_min_,
         dist_local_max_x_, dist_local_max_y_, dist_local_min_x_, dist_local_min_y_);
     }
 
-    void pmAI_RemoveObject(pmAI * ai, ObjectAI * obj){
-      return ai->RemoveObject(obj);
+    void pmAI_RemoveObject(void * ai, ObjectAI * obj){
+      DPRINT( std::cout << "pmAI_RemoveObject()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      return ai_->RemoveObject(obj);
     }
 
-    PyObject* pmAI_GetRoomGrid(pmAI * ai, unsigned int room_id, unsigned int type){
+    PyObject* pmAI_GetRoomGrid(void * ai, unsigned int room_id, unsigned int type){
+      DPRINT( std::cout << "pmAI_GetRoomGrid()" << std::endl );
       PyObject* answer = PyList_New( 5 );
-      if( room_id >= ai->rooms.size() ) return answer;
+
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      if( room_id >= ai_->rooms.size() ) return answer;
       if( type >= GRID_DEAPTH ) return answer;
-      const room_info & room = ai->rooms[ room_id ];
+      const room_info & room = ai_->rooms[ room_id ];
+
       PyObject* grid_list = PyList_New( room.grid_size_x * room.grid_size_y );
       for( int x = 0; x < room.grid_size_x; x++ )
         for( int y = 0; y < room.grid_size_y; y++ )
@@ -610,17 +634,21 @@ class pmAI {
       PyList_SetItem( answer, 2, PyInt_FromLong(room.maximums[type] ) );
       PyList_SetItem( answer, 3, PyInt_FromLong(room.minimums[type] ) );
       PyList_SetItem( answer, 4, grid_list );
+
+      DPRINT( std::cout << "pmAI_GetRoomGrid() end " << std::endl );
       return answer;
     }
 
-    void pmAI_Tick(pmAI * ai, int N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
-      ai->Tick(N_bullets, bullet_positions, bullet_speeds, bullet_rooms);
+    void pmAI_Tick(void * ai, int N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
+      DPRINT( std::cout << "pmAI_Tick()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      ai_->Tick(N_bullets, bullet_positions, bullet_speeds, bullet_rooms);
     }
 
     void pmAI_UpdateObjects(int N_objects, ObjectAI ** objects, int * object_positions, int * object_rooms){
       // update all objects at once
       for(int i = 0; i < N_objects; i++){
-        printf("pmAI_UpdateObjects %d %d %d %d \n", N_objects, object_positions[2*i], object_positions[2*i+1], object_rooms[i]);
+        DPRINT( printf("pmAI_UpdateObjects %d %d %d %d \n", N_objects, object_positions[2*i], object_positions[2*i+1], object_rooms[i]) );
         objects[i]->Update( object_positions[2*i], object_positions[2*i+1], object_rooms[i] );
       }
     }

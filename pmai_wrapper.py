@@ -17,10 +17,14 @@ try:
   pmai_libc = cdll.LoadLibrary( os.path.abspath("modules/pmai.so") )
 except:
   pmai_libc = cdll.LoadLibrary( os.path.abspath("pmai.so") )
+
+# TODO fix all types
+# TODO fix class* to void*
 # pmai_libc.pmPhysic_PyTick.restype = py_object
+pmai_libc.pmAI_new.restype = c_void_p
+pmai_libc.pmAI_AddRoom.restype = c_int
 pmai_libc.pmAI_GetRoomPath.restype = py_object
 pmai_libc.pmAI_GetRoomGrid.restype = py_object
-
 
 # pmai_libc.pmAI_UpdateObjects.argtypes = [c_int, POINTER(c_void_p), POINTER(c_int), POINTER(c_int)]
 
@@ -35,8 +39,7 @@ class ObjectAI(Structure):
               ("dir_local_max_x", POINTER(c_int)), ("dir_local_max_y", POINTER(c_int)), ("local_max", POINTER(c_int)),
               ("dir_local_min_x", POINTER(c_int)), ("dir_local_min_y", POINTER(c_int)), ("local_min", POINTER(c_int)),
               ("dist_local_max_x", POINTER(c_int)), ("dist_local_max_y", POINTER(c_int)),
-              ("dist_local_min_x", POINTER(c_int)), ("dist_local_min_y", POINTER(c_int)),
-    ]
+              ("dist_local_min_x", POINTER(c_int)), ("dist_local_min_y", POINTER(c_int))]
 
 pmai_libc.pmAI_AddObject.restype = POINTER( ObjectAI )
 
@@ -61,7 +64,7 @@ class pmAIObject ():
 
 class pmAI ():
   def __init__(self):
-    self.ai = pmai_libc.pmAI_new()
+    self.ai = c_void_p( pmai_libc.pmAI_new() )
 
   def AddAIObject(self, obj, grid_type, grid_value):
     obj.object_ai = pmai_libc.pmAI_AddObject(self.ai, grid_type, grid_value,
@@ -71,6 +74,7 @@ class pmAI ():
           byref(obj.dist_local_max_x), byref(obj.dist_local_max_y),
           byref(obj.dist_local_min_x), byref(obj.dist_local_min_y)
       )
+    print "receive room_id = ", obj.object_ai.contents.room_id
 
   def RemoveAIObject(self, obj ):
     pmAIObject.object_ai = pmai_libc.pmAI_RemoveObject(self.ai, obj.object_ai)
@@ -100,6 +104,7 @@ class pmAI ():
     for room in rooms:
       start_pos_x, start_pos_y, size_x, size_y = room.GetPositionForAI()
       id = pmai_libc.pmAI_AddRoom(self.ai, start_pos_x, start_pos_y, size_x, size_y);
+      print "TADADADADA"
       room.ai_id = id
 
     print "pmAI.SetRooms() ... add rooms connections"
@@ -138,8 +143,7 @@ class pmAI ():
       bullet_tiles[i] = obj.room_id-1 #FIXME
 
     # pmAI * ai, int N_bullets, float * bullet_positions, int * bullet_rooms
-    print object_ais
-    if object_ais : pmai_libc.pmAI_UpdateObjects(len(objects), object_ais, object_positions, object_tiles)
+    pmai_libc.pmAI_UpdateObjects(len(objects), object_ais, object_positions, object_tiles)
     pmai_libc.pmAI_Tick(self.ai, len(bullets), bullet_positions, bullet_speeds, bullet_tiles)
     
     pass

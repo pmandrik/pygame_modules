@@ -12,7 +12,9 @@ import os
 from random import randint
 import collections
 
+# TODO fix all types
 pmphysics_libc = cdll.LoadLibrary( os.path.abspath("modules/pmphysics.so") )
+pmphysics_libc.pmPhysic_new.restype = c_void_p
 pmphysics_libc.pmPhysic_PyTick.restype = py_object
 
 class pmPhysic ():
@@ -20,17 +22,24 @@ class pmPhysic ():
     self.map_size_x = msx
     self.map_size_y = msy
     self.map_size_types = mst
+    self.map_size_y_X_map_size_types = msy * mst
     self.tile_size = ts
     self.map_data = (c_int * ((self.map_size_x*self.map_size_y*self.map_size_types) + 1))()
     self.physic = None
 
-  # TODO update map tiles
-  #def __del__(self):
-  # 
+  def __del__(self):
+    if not self.physic : return
+    pmphysics_libc.pmPhysic_del( self.physic )
 
-  # TODO delete self.ai
-  #def __del__(self):
-  # 
+  def UpdateMap(self, x, y, type, value):
+    if x < 0 or x >= self.map_size_x : return
+    if y < 0 or y >= self.map_size_y : return
+    if type < 0 or type >= self.map_size_types : return
+    self.map_data[ self.map_size_y_X_map_size_types * x + self.map_size_types * y + type ] = value
+
+  def PrintMap(self):
+    if not self.physic : return
+    pmphysics_libc.pmPhysic_PrintMap( self.physic, 0 )
 
   def InitMapFrom3dArray( self, map_data_array ):
     if True : 
@@ -48,8 +57,8 @@ class pmPhysic ():
             # print map_data_array[x][y][t]
             self.map_data[ x*map_size_xy + y*self.map_size_types + t ] = map_data_array[x][y][t]
     
-    self.physic = pmphysics_libc.pmPhysic_new(self.map_size_x, self.map_size_y, self.map_size_types, self.tile_size, self.map_data)
-    pmphysics_libc.pmPhysic_PrintMap( self.physic, 0 )
+    self.physic = c_void_p( pmphysics_libc.pmPhysic_new( self.map_size_x, self.map_size_y, self.map_size_types, self.tile_size, byref(self.map_data) ) )
+    self.PrintMap()
 
   def Tick(self, objects, bullets):
     # PyObject* pmPhysic_PyTick(pmPhysic* physic, int N_objects, float * object_positions, float * object_speeds, int * object_tiles, float * object_r_sizes, int N_bullets, float * bullet_positions, int * bullet_tiles)
