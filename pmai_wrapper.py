@@ -25,6 +25,7 @@ pmai_libc.pmAI_new.restype = c_void_p
 pmai_libc.pmAI_AddRoom.restype = c_int
 pmai_libc.pmAI_GetRoomPath.restype = py_object
 pmai_libc.pmAI_GetRoomGrid.restype = py_object
+pmai_libc.pmAI_GetInRoomPath.restype = py_object
 
 # pmai_libc.pmAI_UpdateObjects.argtypes = [c_int, POINTER(c_void_p), POINTER(c_int), POINTER(c_int)]
 
@@ -63,8 +64,9 @@ class pmAIObject ():
     self.dist_local_min_y = (c_int * GRID_DEAPTH)()
 
 class pmAI ():
-  def __init__(self):
-    self.ai = c_void_p( pmai_libc.pmAI_new() )
+  def __init__(self, pmTiledMap_ptr):
+    self.ai = c_void_p( pmai_libc.pmAI_new( pmTiledMap_ptr ) )
+    self.room_ids_for_graph_rebuild = {}
 
   def AddAIObject(self, obj, grid_type, grid_value):
     obj.object_ai = pmai_libc.pmAI_AddObject(self.ai, grid_type, grid_value,
@@ -81,6 +83,12 @@ class pmAI ():
 
   def UpdateAIObject(self, obj ):
     pmai_libc.UpdateAIObjects( obj.object_ai )
+    
+  def RebuildRoomGraph(self, room_id):
+    print "\n\n\n"
+    print "RebuildRoomGraph !!!!!!!!!!!!!!!!!!!", room_id
+    
+    self.room_ids_for_graph_rebuild[room_id] = True
 
   def GetRoomGrid(self, room, type):
     answer = pmai_libc.pmAI_GetRoomGrid(self.ai, room, type)
@@ -122,6 +130,16 @@ class pmAI ():
   # 
 
   def Tick(self, objects, bullets):
+    print self.room_ids_for_graph_rebuild
+    if self.room_ids_for_graph_rebuild :
+      print self.room_ids_for_graph_rebuild
+      room_ids = self.room_ids_for_graph_rebuild.keys()
+      room_ids_c = (c_int * (len(room_ids) ))()
+      for i, key in enumerate(room_ids): 
+        room_ids_c[ i ] = key-1 # FIXME
+      pmai_libc.pmAI_RebuildRoomGraphs(self.ai, len(room_ids), room_ids_c )
+      self.room_ids_for_graph_rebuild = {}
+    
     object_positions = (c_int * (len(objects) * 2))()
     object_tiles     = (c_int * (len(objects)    ))()
     object_ais       = (POINTER(ObjectAI) * (len(objects) ))()
@@ -145,8 +163,12 @@ class pmAI ():
     # pmAI * ai, int N_bullets, float * bullet_positions, int * bullet_rooms
     pmai_libc.pmAI_UpdateObjects(len(objects), object_ais, object_positions, object_tiles)
     pmai_libc.pmAI_Tick(self.ai, len(bullets), bullet_positions, bullet_speeds, bullet_tiles)
-    
-    pass
+  
+  def GetInRoomPath(self, room_id, start_pos, target_pos):
+    path = [ [target_pos.x, target_pos.y] ]
+    path = pmai_libc.pmAI_GetInRoomPath(self.ai, room_id, int(start_pos.x), int(start_pos.y), int(target_pos.x), int(target_pos.y))
+    print path
+    return path
 
 def main():
   print pmai_libc.check();

@@ -15,6 +15,7 @@ import collections
 # TODO fix all types
 pmphysics_libc = cdll.LoadLibrary( os.path.abspath("modules/pmphysics.so") )
 pmphysics_libc.pmPhysic_new.restype = c_void_p
+pmphysics_libc.pmTiledMap_new.restype = c_void_p
 pmphysics_libc.pmPhysic_PyTick.restype = py_object
 
 class pmPhysic ():
@@ -25,21 +26,31 @@ class pmPhysic ():
     self.map_size_y_X_map_size_types = msy * mst
     self.tile_size = ts
     self.map_data = (c_int * ((self.map_size_x*self.map_size_y*self.map_size_types) + 1))()
-    self.physic = None
+    
+    self.pmPhysic_ptr   = None
+    self.pmTiledMap_ptr = None
 
   def __del__(self):
-    if not self.physic : return
-    pmphysics_libc.pmPhysic_del( self.physic )
+    if self.pmPhysic_ptr   : pmphysics_libc.pmPhysic_del( self.pmPhysic_ptr )
+    if self.pmTiledMap_ptr : pass #FIXME
 
   def UpdateMap(self, x, y, type, value):
     if x < 0 or x >= self.map_size_x : return
     if y < 0 or y >= self.map_size_y : return
     if type < 0 or type >= self.map_size_types : return
     self.map_data[ self.map_size_y_X_map_size_types * x + self.map_size_types * y + type ] = value
+    
+  def GetMapValueSafe(self, x, y, type):
+    x = int(x / self.tile_size)
+    y = int(y / self.tile_size)
+    if x < 0 or x >= self.map_size_x : return -1
+    if y < 0 or y >= self.map_size_y : return -1
+    if type < 0 or type >= self.map_size_types : return -1
+    return self.map_data[ self.map_size_y_X_map_size_types * x + self.map_size_types * y + type ]
 
   def PrintMap(self):
-    if not self.physic : return
-    pmphysics_libc.pmPhysic_PrintMap( self.physic, 0 )
+    if not self.pmTiledMap_ptr : return
+    pmphysics_libc.pmTiledMap_PrintMap( self.pmTiledMap_ptr, 0 )
 
   def InitMapFrom3dArray( self, map_data_array ):
     if True : 
@@ -57,7 +68,8 @@ class pmPhysic ():
             # print map_data_array[x][y][t]
             self.map_data[ x*map_size_xy + y*self.map_size_types + t ] = map_data_array[x][y][t]
     
-    self.physic = c_void_p( pmphysics_libc.pmPhysic_new( self.map_size_x, self.map_size_y, self.map_size_types, self.tile_size, byref(self.map_data) ) )
+    self.pmTiledMap_ptr = c_void_p( pmphysics_libc.pmTiledMap_new( self.map_size_x, self.map_size_y, self.map_size_types, self.tile_size, byref(self.map_data) ) )
+    self.physic = c_void_p( pmphysics_libc.pmPhysic_new( self.pmTiledMap_ptr) )
     self.PrintMap()
 
   def Tick(self, objects, bullets):

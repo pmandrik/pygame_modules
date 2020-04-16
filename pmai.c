@@ -2,15 +2,17 @@
 #ifndef pmai
 #define pmai 1
 
-// g++ -Wall -Wno-long-long -I/usr/include/python2.7 -lpython2.7  -Wextra -O -ansi -pedantic -shared -o pmai.so -fPIC pmai.c
+// g++ -Wall -Wfatal-errors -Wno-long-long -I/usr/include/python2.7 -lpython2.7  -Wextra -O -ansi -pedantic -shared -o pmai.so -fPIC pmai.c
 
 #include <Python.h>
 #include <vector>
 #include <map>
 #include <cmath>
 
-// #define DEBUG_CODE 1 
+#include "pmphysics.c"
+#include "PMANDRIK_LIBRARY/pmlib_path_search.hh"
 
+#define DEBUG_CODE 1 
 #ifdef DEBUG_CODE 
 #include <iostream>
 #define DPRINT(x) (x)
@@ -30,9 +32,55 @@ static const int ENEMY_TEAM3_GRID_TYPE = 4; //
 static const int DANGEROUS_OBJECTS     = 5; // 
 static const int HELPFULL_OBJECTS      = 6; // 
 
+  // structute to be used for construction of the graph within rooms
+  struct room_graph_member{
+    room_graph_member(int start_x_, int start_y_, int end_x_, int end_y_){
+      start_x = start_x_;
+      start_y = start_y_;
+      end_x = end_x_;
+      end_y = end_y_;
+      center_x = (start_x + end_x) / 2;
+      center_y = (start_y + end_y) / 2;
+    }
+    
+    room_graph_member(){}
+    
+    int GetNumberOfConnections(void) const {
+      return connected_graphs.size();
+    };
+      
+    int GetConnectionAt(const int & index) const {
+      return connected_graphs.at(index);
+    };
+    
+    float EmpiricDistance(const room_graph_member & other) const {
+      int answer = std::min( abs(other.center_x - start_x), abs(other.center_x - end_x) );
+      answer = std::min(answer, abs(other.center_y - start_y) );
+      answer = std::min(answer, abs(other.center_y - end_y)   );
+      answer = std::min(answer, abs(other.center_x - center_x));
+      answer = std::min(answer, abs(other.center_y - center_y));
+      return answer + rand() % 100;
+    };
+    
+    void Print() const {
+      printf("room_graph_member x,y,w,h = %d,%d,%d,%d n_connects = %d\n", start_x, start_y, end_x-start_x, end_y-start_y, connected_graphs.size());
+    }
+    
+    void SetConnectedEdges(const room_graph_member & other, int & x, int & y) const {
+      if( start_x == other.end_x+1   ) x = start_x;
+      if( end_x   == other.start_x+1 ) x = end_x;
+      if( start_y == other.end_y+1   ) y = start_y;
+      if( end_y   == other.start_y+1 ) y = end_y;
+    }
+    
+    int start_x, start_y, end_x, end_y, center_x, center_y;
+    std::vector<int> connected_graphs;
+  };
+
 // structute to be used to store info about rooms
-struct room_info{
-  room_info(const int & px, const int & py, const int & sx, const int & sy){
+class room_info  {
+  public:
+  room_info(const int & px, const int & py, const int & sx, const int & sy, pmTiledMap * map){
     start_x = px;
     start_y = py;
     size_x = sx;
@@ -43,9 +91,9 @@ struct room_info{
     grid_size_y = size_y / GRID_SIZE;
     if(size_x % GRID_SIZE) grid_size_x++;
     if(size_y % GRID_SIZE) grid_size_y++;
-
     printf( "pmai.c:room_info() ...\n");
 
+    // grid massive to store information about objects, bullets etc
     grid = new int ** [grid_size_x]; // [grid_size_x][grid_size_y][GRID_DEAPTH];
     grid_back = new int ** [grid_size_x]; // [grid_size_x][grid_size_y][GRID_DEAPTH];
     for(int i = 0; i < grid_size_x; i++){
@@ -76,9 +124,18 @@ for i in xrange(-grid_spline_steps, grid_spline_steps+1, 1):
 
 print sum
     */
+    
+    // Create room path graph ...
+    tstart_x = px / map->tsize;
+    tstart_y = py / map->tsize;
+    tend_x   = (px + sx) / map->tsize;
+    tend_y   = (py + sy) / map->tsize;
+    CreateGraph( map );
+    
     printf( "pmai.c:room_info() ... ok\n");
   }
 
+  int tstart_x, tstart_y, tend_x, tend_y;
   int id;
   std::vector<int> connected_rooms;
   int start_x, start_y;
@@ -204,6 +261,12 @@ print sum
     //  max_y[type] = y;
     //}
   }
+  
+  bool CheckIfPointInRoom(const int & x, const int & y) const {
+    if( x < start_x or x >= start_x + size_x) return false;
+    if( y < start_y or y >= start_y + size_y) return false;
+    return true;
+  }
 
   void PostProcess(){
     for(int k = 0; k < GRID_DEAPTH; k++){
@@ -242,23 +305,98 @@ print sum
         }
     }
   }
-};
-
-// structute to be used for path finding between rooms
-  struct room_astar_member{
-    room_astar_member(room_astar_member * fa = NULL, int id_ = -1, float dte = -1.f, float dts = -1.f){
-      father           = fa;
-      id               = id_;
-      distance_to_end     = dte;
-      distance_from_start = dts;
+  
+  // similare to update ...
+  void AddLineToGraphs(const int & x, const int & ys, const int & ye){
+    for(unsigned int i = 0; i < path_graphs.size(); i++){
+      room_graph_member & gm = path_graphs.at(i);
+      if( x-1 != gm.end_x ) continue; // we are only going to add new lines from left to right
+      if(gm.start_y != ys or gm.end_y != ye) continue;
+      gm.end_x += 1;
+      gm.center_x = (gm.start_x + gm.end_x) / 2;
+      return;
     }
-
-    room_astar_member * father;
-    int id;
-    int distance_to_end;
-    int distance_from_start;
-  };
-
+    path_graphs.push_back( room_graph_member(x, ys, x, ye) );
+  }
+  
+  void CreateGraph( pmTiledMap * map ){
+    path_graphs.clear();
+    // go over lines and put connected empty spaces in to rects 
+    DPRINT( printf("room_info.CreateGraph(): %d %d \n", tstart_x, tend_x) );
+    for(int x = tstart_x; x < tend_x; x++){
+      int rect_start = -1;
+      for(int y = tstart_y; y < tend_y; y++){
+        bool is_solid = not map->GetTypeSafeI(x, y, 0);
+        if(not is_solid and rect_start == -1){
+          rect_start = y;
+          continue;
+        }
+        if(not is_solid) continue;
+        if(rect_start == -1) continue;
+        DPRINT( printf("!!! ========> add \n") );
+        AddLineToGraphs(x, rect_start, y-1);
+        rect_start = -1;
+      }
+      if(rect_start == -1) continue;
+      DPRINT( printf("!!! ========> add \n") );
+      AddLineToGraphs(x, rect_start, tend_y-1);
+    }
+    
+    DPRINT( printf("room_info.CreateGraph(): make connections\n") );
+    for(unsigned int i = 0; i < path_graphs.size(); i++){
+      room_graph_member & gm_i = path_graphs.at(i);
+      for(unsigned int j = i+1; j < path_graphs.size(); j++){
+        room_graph_member & gm_j = path_graphs.at(j);
+        if( gm_i.start_x-1 == gm_j.end_x or gm_i.end_x+1 == gm_j.start_x){
+          if( gm_i.start_y > gm_j.end_y   ) continue;
+          if( gm_i.end_y   < gm_j.start_y ) continue;
+          gm_i.connected_graphs.push_back( j );
+          gm_j.connected_graphs.push_back( i );
+        }
+        
+        if( gm_i.start_y-1 == gm_j.end_y or gm_i.end_y+1 == gm_j.start_y){
+          if( gm_i.start_x > gm_j.end_x   ) continue;
+          if( gm_i.end_x   < gm_j.start_x ) continue;
+          gm_i.connected_graphs.push_back( j );
+          gm_j.connected_graphs.push_back( i );
+        }
+      }
+    }
+    DPRINT( printf("room_info.CreateGraph(): done ...\n") );
+    if(true){
+      for(unsigned int i = 0; i < path_graphs.size(); i++){
+        const room_graph_member & gm_i = path_graphs.at(i);
+        gm_i.Print();
+      }
+    }
+  }
+  
+  int GetGraph(const int & pos_x, const int & pos_y) const {
+    DPRINT( std::cout << "room_info.GetGraph(): " << path_graphs.size() << std::endl );
+    for(unsigned int i = 0; i < path_graphs.size(); i++){
+      const room_graph_member & gm_i = path_graphs.at(i);
+      if(pos_x < gm_i.start_x or pos_x > gm_i.end_x) continue;
+      if(pos_y < gm_i.start_y or pos_y > gm_i.end_y) continue;
+      return i;
+    }
+    return -1;
+  }
+  
+  std::vector< room_graph_member > path_graphs;
+  
+  // functions used to path search between rooms
+  int GetNumberOfConnections() const {
+    return connected_rooms.size();
+  }
+  
+  int GetConnectionAt(const int & index) const {
+    return connected_rooms.at( index );
+  }
+  
+  float EmpiricDistance(const room_info & other) const {
+    return std::abs(center_x - other.center_x) + std::abs(center_y - other.center_y);
+  }
+};
 
 class ObjectAI {
   public:
@@ -320,15 +458,18 @@ class ObjectAI {
 
 class pmAI {
   public:
-    pmAI(){
+    pmAI( pmTiledMap * map ){
       printf("pmai.pmAI() ... ");
       max_astars_per_tick = 5;
       id_counter = 0;
+      game_map = map;
       printf("ok\n");
       raytracer_bullets_steps = 5;
 
       DPRINT( std::cout << "QWERTY + " << rooms.size() << std::endl );
     }
+    
+    pmTiledMap * game_map;
 
     void Tick(const int & N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
       DPRINT( std::cout << "pmAI.Tick with " << N_bullets << "bullets" << std::endl );
@@ -407,7 +548,7 @@ class pmAI {
     }
 
   int AddRoom(int px, int py, int sx, int sy){
-    rooms.push_back( room_info(px, py, sx, sy) );
+    rooms.push_back( room_info(px, py, sx, sy, this->game_map) );
     rooms[rooms.size()-1].id = rooms.size()-1;
     return rooms.size()-1;
   }
@@ -471,85 +612,104 @@ class pmAI {
     objects.erase( it );
   }
 
-  // find path between rooms
-  double RoomsEmpiricDistance(const room_info & room_1, const room_info & room_2){
-    return std::abs(room_1.center_x - room_2.center_x) + std::abs(room_1.center_y - room_2.center_y);
-  }
-
-  void RoomsAstar(const room_info & room_start, const room_info & room_end, std::vector<int> & answer_path){
-    if(room_start.id == room_end.id){
-      answer_path.push_back( room_start.id );
-      return;
-    }
-
-    // possible directions { room_id : [father id, empiric distance to end, distance from start] }
-    std::map<int, room_astar_member*> open_list; 
-    std::map<int, room_astar_member*> close_list; 
-    room_astar_member * it_end;
-    open_list[ room_start.id ] = new room_astar_member( NULL, -1, RoomsEmpiricDistance(room_start, room_end), 0 );
-
-    while( true ){
-      if( not open_list.size() ) goto exit_mark;
-      std::map<int, room_astar_member*>::iterator it_min = open_list.begin();
-      float minimal_path = it_min->second->distance_to_end + it_min->second->distance_from_start;
-      for(std::map<int, room_astar_member*>::iterator it = open_list.begin(); it != open_list.end(); ++it){
-        if( it->second->distance_to_end + it->second->distance_from_start >= minimal_path ) continue;
-        minimal_path = it->second->distance_to_end + it->second->distance_from_start;
-        it_min = it;
-      }
-
-      int checked_id = it_min->first;
-      room_astar_member * checked_room = it_min->second;
-      close_list[ it_min->first ] = checked_room;
-      open_list.erase( it_min );
-
-      const room_info & room = rooms[ checked_id ];
-      for( unsigned int i = 0; i < room.connected_rooms.size(); i++ ){
-        const int & id = room.connected_rooms[i];
-        std::map<int, room_astar_member*>::iterator it_closed = close_list.find(id);
-        if( it_closed != close_list.end() ) continue;
-        const room_info & room_next = rooms[ id ];
-        float distance_to_end = RoomsEmpiricDistance(room_next, room_end);
-        std::map<int, room_astar_member*>::iterator it_prev = open_list.find(id);
-        if( it_prev != open_list.end() ){
-          if( it_prev->second->distance_from_start > checked_room->distance_from_start + 1 ){
-            it_prev->second->father = checked_room;
-            it_prev->second->distance_from_start = checked_room->distance_from_start + 1;
-          }
-        } else 
-          open_list[ id ] = new room_astar_member( checked_room, id, distance_to_end, checked_room->distance_from_start + 1 );
-
-        if(id == room_end.id) goto find_end_mark;
-      }
-    }
-
-    find_end_mark : 
-    it_end = open_list.find( room_end.id )->second;
-    while( it_end->father != NULL ){
-      answer_path.push_back( it_end->id );
-      it_end = it_end->father;
-      if( answer_path.size() > 50 ) break;
-    }
-
-    exit_mark :
-    for(std::map<int, room_astar_member*>::iterator it = open_list.begin(); it != open_list.end(); it++)
-      delete it->second;
-    for(std::map<int, room_astar_member*>::iterator it = close_list.begin(); it != close_list.end(); it++)
-      delete it->second;
-  }
-
+  // find path between rooms =====================================================
   PyObject* GetRoomPath(const unsigned int & start_room_id, const unsigned int & end_room_id){
     std::vector<int> answer_path; 
     if(start_room_id < rooms.size() and end_room_id < rooms.size()){
-      const room_info & room_start = rooms[ start_room_id ];
-      const room_info & room_end = rooms[ end_room_id ];
       // printf("path for %d %d \n", start_room_id, end_room_id);
-      RoomsAstar( room_start, room_end, answer_path );
+      pm::Astar( this->rooms, start_room_id, end_room_id,  answer_path );
     }
 
     PyObject* answer = PyList_New( answer_path.size() );
     for(int i = answer_path.size()-1; i >= 0; --i)
       PyList_SetItem( answer, answer_path.size()-1 - i, PyInt_FromLong( answer_path[i] ) );
+    return answer;
+  }
+
+  // find path within room =====================================================
+  void ConstructInRoomPath(const room_info & room, std::vector< std::pair<int, int> > & answer, int start_position_x, int start_position_y, int end_position_x, int end_position_y){
+    // check if points is within the given room
+    if(not room.CheckIfPointInRoom(start_position_x, start_position_y)) return;
+    if(not room.CheckIfPointInRoom(end_position_x, end_position_y))     return;
+    
+    // check if points are not in solid tiles ???
+    start_position_x /= game_map->tsize;
+    start_position_y /= game_map->tsize;
+    end_position_x /= game_map->tsize;
+    end_position_y /= game_map->tsize;
+    if( not game_map->GetTypeSafeI(start_position_x, start_position_y, 0) ) return;
+    if( not game_map->GetTypeSafeI(end_position_x, end_position_y, 0) ) return;
+      
+    // find path using in-room graphs
+    int start_graph_index = room.GetGraph(start_position_x, start_position_y);
+    int end_graph_index   = room.GetGraph(end_position_x, end_position_y);
+    DPRINT( std::cout << "pmAI.ConstructInRoomPath() ... going to call A* for " << start_graph_index << " " << end_graph_index << "indexes" << std::endl );
+    std::vector<int> graph_path;
+    pm::Astar(room.path_graphs, start_graph_index, end_graph_index, graph_path);
+    
+    if( graph_path.size() >= 2)
+      graph_path.push_back( start_graph_index );
+      
+    // construct real path TODO
+    int px = start_position_x;
+    int py = start_position_y;
+    
+    for(int i = graph_path.size()-1; i > 0; i--){
+      const room_graph_member & rgm = room.path_graphs.at( graph_path[i] );
+      if( i == 0 ){
+        answer.push_back( std::make_pair<int, int>(rgm.center_x, rgm.center_y) );
+        continue;
+      }
+      const room_graph_member & rgm_next = room.path_graphs.at( graph_path[i-1] );
+      
+      bool change_x = false;
+      if( rgm.start_x == rgm_next.end_x+1 ){
+        px = rgm.start_x;
+        change_x = true;
+      } else if(rgm.end_x == rgm_next.start_x-1) {
+        px = rgm.end_x;
+        change_x = true;
+      } else if(rgm.start_y == rgm_next.end_y+1) {
+        py = rgm.start_y;
+      } else if(rgm.end_y == rgm_next.start_y-1) {
+        py = rgm.end_y;
+      }
+      
+      
+      if(not change_x){
+        int start = std::max( rgm.start_x, rgm_next.start_x );
+        int end   = std::min( rgm.end_x, rgm_next.end_x );
+        px = std::max(px, std::min(start+2, end));
+        px = std::min(px, std::max(end-2, start));
+      } else {
+        int start = std::max( rgm.start_y, rgm_next.start_y );
+        int end   = std::min( rgm.end_y, rgm_next.end_y );
+        py = std::max(py, std::min(start+2, end));
+        py = std::min(py, std::max(end-2, start));
+        printf(">>> %d %d %d", py, start, end);
+      }
+      answer.push_back( std::make_pair<int, int>(px, py) );
+    }
+    answer.push_back( std::make_pair<int, int>(end_position_x, end_position_y) );
+  }
+  
+  PyObject* GetInRoomPath(const unsigned int & room_id, const int & start_position_x, const int & start_position_y, const int & end_position_x, const int & end_position_y){
+    DPRINT( std::cout << "pmAI.GetInRoomPath() ... " << room_id << " " << start_position_x << " " << start_position_y << " " << end_position_x << " " << end_position_x << std::endl );
+
+    std::vector< std::pair<int, int> > answer_path; 
+    if( room_id < rooms.size() ){
+      const room_info & room = rooms[ room_id ];
+      ConstructInRoomPath( room, answer_path, start_position_x, start_position_y, end_position_x, end_position_y );
+    }
+    
+    DPRINT( std::cout << "pmAI.GetInRoomPath() : creating answer PyObject" << std::endl );
+    PyObject* answer = PyList_New( answer_path.size() );
+    for(int i = answer_path.size()-1; i >= 0; --i){
+      PyObject* point = PyList_New( 2 );
+      PyList_SetItem(point, 0, PyInt_FromLong( game_map->tsize/2 + game_map->tsize * answer_path[i].first ) );
+      PyList_SetItem(point, 1, PyInt_FromLong( game_map->tsize/2 + game_map->tsize * answer_path[i].second ) );
+      PyList_SetItem( answer, answer_path.size()-1-i, point );
+    }
     return answer;
   }
 
@@ -563,9 +723,9 @@ class pmAI {
 };
 
   extern "C" {
-    void * pmAI_new() {
+    void * pmAI_new( pmTiledMap * game_map ) {
       DPRINT( std::cout << "pmAI_new()" << std::endl );
-      pmAI * answer = new pmAI( );
+      pmAI * answer = new pmAI( game_map );
       return answer;
     }
 
@@ -594,6 +754,21 @@ class pmAI {
       DPRINT( std::cout << "pmAI_GetRoomPath()" << std::endl );
       pmAI * ai_ = static_cast<pmAI*>( ai );
       return ai_->GetRoomPath(start_room_id, end_room_id);
+    }
+    
+    PyObject* pmAI_GetInRoomPath(void * ai, int room_id, int start_position_x, int start_position_y, int end_position_x, int end_position_y){
+      DPRINT( std::cout << "pmAI_GetInRoomPath()" << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      return ai_->GetInRoomPath(room_id, start_position_x, start_position_y, end_position_x, end_position_y);
+    }
+    
+    void pmAI_RebuildRoomGraphs(void * ai, int n_rooms_ids, int * room_ids){
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      for(int i = 0; i < n_rooms_ids; i++){
+        int room_id = room_ids[i];
+        DPRINT( std::cout << "pmAI_RebuildRoomGraphs():" << room_id << std::endl );
+        ai_->rooms.at( room_id ).CreateGraph( ai_->game_map );
+      }
     }
 
     ObjectAI * pmAI_AddObject(void * ai, int grid_type, int value, 
@@ -654,7 +829,7 @@ class pmAI {
     }
   }
 
-  extern "C" int check(){ return 0; }
+  extern "C" int check_pmai(){ return 0; }
 
 #endif
 
