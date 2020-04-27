@@ -16,7 +16,7 @@ import collections
 pmphysics_libc = cdll.LoadLibrary( os.path.abspath("modules/pmphysics.so") )
 pmphysics_libc.pmPhysic_new.restype = c_void_p
 pmphysics_libc.pmTiledMap_new.restype = c_void_p
-pmphysics_libc.pmPhysic_PyTick.restype = py_object
+pmphysics_libc.pmPhysic_Tick.restype = py_object
 
 class pmPhysic ():
   def __init__(self, msx, msy, mst, ts):
@@ -73,13 +73,14 @@ class pmPhysic ():
     self.PrintMap()
 
   def Tick(self, objects, bullets):
-    # PyObject* pmPhysic_PyTick(pmPhysic* physic, int N_objects, float * object_positions, float * object_speeds, int * object_tiles, float * object_r_sizes, int N_bullets, float * bullet_positions, int * bullet_tiles)
+    # PyObject* pmPhysic_Tick(pmPhysic* physic, int N_objects, float * object_positions, float * object_speeds, int * object_tiles, float * object_r_sizes, int N_bullets, float * bullet_positions, int * bullet_tiles)
 
     object_positions = (c_float * (len(objects) * 2))()
     object_speeds = (c_float * (len(objects) * 2))()
     object_tiles   = (c_int * (len(objects) * self.map_size_types))()
     object_sizes_xy = (c_float * (len(objects) * 2))()  
     object_angles   = (c_float * len(objects))()
+    object_x_solids = (c_bool * len(objects))()
     for i, obj in enumerate( objects ) :
       object_positions[ 2*i   ] = obj.pos.x
       object_positions[ 2*i+1 ] = obj.pos.y
@@ -97,7 +98,7 @@ class pmPhysic ():
 
     result = None
     # print "!!! 1"
-    result = pmphysics_libc.pmPhysic_PyTick( self.physic, len(objects), byref(object_positions), byref(object_speeds), byref(object_tiles), object_sizes_xy, object_angles, len(bullets), byref(bullet_positions), byref(bullet_tiles) )
+    result = pmphysics_libc.pmPhysic_Tick( self.physic, len(objects), byref(object_positions), byref(object_speeds), byref(object_tiles), object_sizes_xy, object_angles, byref(object_x_solids), len(bullets), byref(bullet_positions), byref(bullet_tiles) )
     # print "!!! 2"
     
     for i, obj in enumerate( objects ) :
@@ -105,6 +106,8 @@ class pmPhysic ():
       obj.pos.y   = object_positions[ 2*i+1 ] 
       obj.speed.x = object_speeds[ 2*i   ]
       obj.speed.y = object_speeds[ 2*i+1 ]
+      
+      obj.interact_with_solid = object_x_solids[ i ]
 
       index = i*self.map_size_types
       for type in xrange(self.map_size_types):

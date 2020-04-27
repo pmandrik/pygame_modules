@@ -12,7 +12,7 @@
 #include "pmphysics.c"
 #include "PMANDRIK_LIBRARY/pmlib_path_search.hh"
 
-#define DEBUG_CODE 1 
+// #define DEBUG_CODE 1 
 #ifdef DEBUG_CODE 
 #include <iostream>
 #define DPRINT(x) (x)
@@ -54,13 +54,13 @@ static const int HELPFULL_OBJECTS      = 6; //
     };
     
     float EmpiricDistance(const room_graph_member & other) const {
-      int answer = std::min( abs(other.center_x - start_x), abs(other.center_x - end_x) );
-      answer = std::min(answer, abs(other.center_y - start_y) );
-      answer = std::min(answer, abs(other.center_y - end_y)   );
-      answer = std::min(answer, abs(other.center_x - center_x));
-      answer = std::min(answer, abs(other.center_y - center_y));
+      int answer = pow(abs(other.center_x - center_x), 2) + pow(abs(other.center_y - center_y), 2);
       return answer + rand() % 100;
     };
+    
+    float RealDistance(const room_graph_member & other) const {
+      return pow(abs(other.center_x - center_x), 2) + pow(abs(other.center_y - center_y), 2);
+    }
     
     void Print() const {
       printf("room_graph_member x,y,w,h = %d,%d,%d,%d n_connects = %d\n", start_x, start_y, end_x-start_x, end_y-start_y, connected_graphs.size());
@@ -342,6 +342,33 @@ print sum
       AddLineToGraphs(x, rect_start, tend_y-1);
     }
     
+    DPRINT( printf("before splitting %d \n", path_graphs.size()) );
+    std::vector< room_graph_member > new_graphs;
+    for(int i = path_graphs.size()-1; i >= 0; i--){
+      room_graph_member & gm = path_graphs.at(i);
+      bool is_solid_prev_l = not map->GetTypeSafeI(gm.start_x-1, gm.start_y, 0);
+      bool is_solid_prev_r = not map->GetTypeSafeI(  gm.end_x+1, gm.start_y, 0);
+      for(int y = gm.start_y+1; y <= gm.end_y; y++){
+        bool is_solid_l = not map->GetTypeSafeI(gm.start_x-1, y, 0);
+        bool is_solid_r = not map->GetTypeSafeI(  gm.end_x+1, y, 0);
+        
+        if(is_solid_prev_l != is_solid_l or is_solid_prev_r != is_solid_r){
+          is_solid_prev_l = is_solid_l;
+          is_solid_prev_r = is_solid_r;
+          
+          new_graphs.push_back( room_graph_member(gm.start_x, gm.start_y, gm.end_x, y-1) );
+          
+          gm.start_y   = y;
+          gm.center_y  = (gm.start_y + gm.end_y) / 2;
+          DPRINT( printf("after splitting %d \n", path_graphs.size()) );
+        }
+      }
+    }
+    for(int i = new_graphs.size()-1; i >= 0; i--)
+      path_graphs.push_back( new_graphs[i] );
+    
+    DPRINT( printf("after splitting %d \n", path_graphs.size()) );
+    
     DPRINT( printf("room_info.CreateGraph(): make connections\n") );
     for(unsigned int i = 0; i < path_graphs.size(); i++){
       room_graph_member & gm_i = path_graphs.at(i);
@@ -394,6 +421,10 @@ print sum
   }
   
   float EmpiricDistance(const room_info & other) const {
+    return std::abs(center_x - other.center_x) + std::abs(center_y - other.center_y);
+  }
+  
+  float RealDistance(const room_info & other) const {
     return std::abs(center_x - other.center_x) + std::abs(center_y - other.center_y);
   }
 };
@@ -471,7 +502,7 @@ class pmAI {
     
     pmTiledMap * game_map;
 
-    void Tick(const int & N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
+  void Tick(const int & N_bullets, int * bullet_positions, float * bullet_speeds, int * bullet_rooms){
       DPRINT( std::cout << "pmAI.Tick with " << N_bullets << "bullets" << std::endl );
       for(unsigned int i = 0; i < rooms.size(); ++i)
         //rooms[i].ResetGrid();
@@ -643,12 +674,24 @@ class pmAI {
     // find path using in-room graphs
     int start_graph_index = room.GetGraph(start_position_x, start_position_y);
     int end_graph_index   = room.GetGraph(end_position_x, end_position_y);
+    if(start_graph_index == -1 or end_graph_index == -1)
+      return;
+    
     DPRINT( std::cout << "pmAI.ConstructInRoomPath() ... going to call A* for " << start_graph_index << " " << end_graph_index << "indexes" << std::endl );
     std::vector<int> graph_path;
     pm::Astar(room.path_graphs, start_graph_index, end_graph_index, graph_path);
     
     if( graph_path.size() >= 2)
       graph_path.push_back( start_graph_index );
+    
+    if(false){ // use room centers for debug
+      for(int i = graph_path.size()-1; i >= 0; i--){
+        const room_graph_member & rgm = room.path_graphs.at( graph_path[i] );
+        answer.push_back( std::make_pair<int, int>(rgm.center_x, rgm.center_y) );
+      }
+      answer.push_back( std::make_pair<int, int>(end_position_x, end_position_y) );
+      return;
+    }
       
     // construct real path TODO
     int px = start_position_x;
@@ -705,11 +748,16 @@ class pmAI {
     DPRINT( std::cout << "pmAI.GetInRoomPath() : creating answer PyObject" << std::endl );
     PyObject* answer = PyList_New( answer_path.size() );
     for(int i = answer_path.size()-1; i >= 0; --i){
+      DPRINT( std::cout << i << " !!1 1" << std::endl );
       PyObject* point = PyList_New( 2 );
+      DPRINT( std::cout << i << " !!1 2" << std::endl );
       PyList_SetItem(point, 0, PyInt_FromLong( game_map->tsize/2 + game_map->tsize * answer_path[i].first ) );
+      DPRINT( std::cout << i << " !!1 3" << std::endl );
       PyList_SetItem(point, 1, PyInt_FromLong( game_map->tsize/2 + game_map->tsize * answer_path[i].second ) );
+      DPRINT( std::cout << i << " !!1 4" << std::endl );
       PyList_SetItem( answer, answer_path.size()-1-i, point );
     }
+    DPRINT( std::cout << "pmAI.GetInRoomPath() ... return" << std::endl );
     return answer;
   }
 
@@ -752,14 +800,54 @@ class pmAI {
 
     PyObject* pmAI_GetRoomPath(void * ai, int start_room_id, int end_room_id){
       DPRINT( std::cout << "pmAI_GetRoomPath()" << std::endl );
+      PyGILState_STATE gstate = PyGILState_Ensure();
       pmAI * ai_ = static_cast<pmAI*>( ai );
-      return ai_->GetRoomPath(start_room_id, end_room_id);
+      PyObject* answer = ai_->GetRoomPath(start_room_id, end_room_id);
+      PyGILState_Release(gstate);
+      return answer;
+    }
+    
+    PyObject* pmAI_GetInRoomGraphs(void * ai, int room_id){
+      PyGILState_STATE gstate = PyGILState_Ensure();
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      const room_info & room = ai_->rooms[ room_id ];
+      const std::vector< room_graph_member > & path_graphs = room.path_graphs;
+      
+      PyObject* answer = PyList_New( path_graphs.size() );
+      pmTiledMap * game_map = ai_->game_map;
+      for(unsigned int i = 0; i < path_graphs.size(); i++){
+        const room_graph_member & gm_i = path_graphs.at(i);
+        
+        PyObject* item = PyList_New( 4 );
+        PyList_SetItem(item, 0, PyInt_FromLong(game_map->tsize/2 +game_map->tsize * gm_i.start_x) );
+        PyList_SetItem(item, 1, PyInt_FromLong(game_map->tsize/2 +game_map->tsize * gm_i.start_y) );
+        PyList_SetItem(item, 2, PyInt_FromLong(game_map->tsize/2 +game_map->tsize * gm_i.end_x) );
+        PyList_SetItem(item, 3, PyInt_FromLong(game_map->tsize/2 +game_map->tsize * gm_i.end_y) );
+        
+        PyList_SetItem( answer, i, item );
+      }
+      PyGILState_Release(gstate);
+      return answer;
     }
     
     PyObject* pmAI_GetInRoomPath(void * ai, int room_id, int start_position_x, int start_position_y, int end_position_x, int end_position_y){
       DPRINT( std::cout << "pmAI_GetInRoomPath()" << std::endl );
       pmAI * ai_ = static_cast<pmAI*>( ai );
-      return ai_->GetInRoomPath(room_id, start_position_x, start_position_y, end_position_x, end_position_y);
+      PyGILState_STATE gstate = PyGILState_Ensure();
+      PyObject* answer = ai_->GetInRoomPath(room_id, start_position_x, start_position_y, end_position_x, end_position_y);
+      PyGILState_Release(gstate);
+      return answer;
+    }
+    
+    void pmAI_CheckIfTargetsVisible(void * ai, int N_objects, int * obj_pos, int * targ_pos, bool * answers){
+      DPRINT( std::cout << "pmAI_CheckIfTargetsVisible() ..." << N_objects << std::endl );
+      pmAI * ai_ = static_cast<pmAI*>( ai );
+      pmTiledMap * game_map = ai_->game_map;
+      for(int i = 0; i < N_objects; i++){
+        // DPRINT( std::cout << "pmAI_CheckIfTargetsVisible() ... process object " << i << " " << obj_pos[2*i] << " " << obj_pos[2*i+1] << " " << targ_pos[2*i] << " " <<  targ_pos[2*i+1]<< std::endl );
+        answers[i] = game_map->CheckRayTracer( obj_pos[2*i], obj_pos[2*i+1], targ_pos[2*i], targ_pos[2*i+1] );
+      }
+      DPRINT( std::cout << "pmAI_CheckIfTargetsVisible() ... return" << std::endl );
     }
     
     void pmAI_RebuildRoomGraphs(void * ai, int n_rooms_ids, int * room_ids){
@@ -792,25 +880,29 @@ class pmAI {
 
     PyObject* pmAI_GetRoomGrid(void * ai, unsigned int room_id, unsigned int type){
       DPRINT( std::cout << "pmAI_GetRoomGrid()" << std::endl );
+      PyGILState_STATE gstate = PyGILState_Ensure();
+      
       PyObject* answer = PyList_New( 5 );
 
       pmAI * ai_ = static_cast<pmAI*>( ai );
-      if( room_id >= ai_->rooms.size() ) return answer;
-      if( type >= GRID_DEAPTH ) return answer;
-      const room_info & room = ai_->rooms[ room_id ];
+      if( room_id < ai_->rooms.size() and type < GRID_DEAPTH ){
+        const room_info & room = ai_->rooms[ room_id ];
 
-      PyObject* grid_list = PyList_New( room.grid_size_x * room.grid_size_y );
-      for( int x = 0; x < room.grid_size_x; x++ )
-        for( int y = 0; y < room.grid_size_y; y++ )
-          PyList_SetItem( grid_list, x * room.grid_size_y + y, PyInt_FromLong(room.grid[x][y][type]) );
+        PyObject* grid_list = PyList_New( room.grid_size_x * room.grid_size_y );
+        for( int x = 0; x < room.grid_size_x; x++ )
+          for( int y = 0; y < room.grid_size_y; y++ )
+            PyList_SetItem( grid_list, x * room.grid_size_y + y, PyInt_FromLong(room.grid[x][y][type]) );
 
-      PyList_SetItem( answer, 0, PyInt_FromLong(room.grid_size_x) );
-      PyList_SetItem( answer, 1, PyInt_FromLong(room.grid_size_y) );
-      PyList_SetItem( answer, 2, PyInt_FromLong(room.maximums[type] ) );
-      PyList_SetItem( answer, 3, PyInt_FromLong(room.minimums[type] ) );
-      PyList_SetItem( answer, 4, grid_list );
+        PyList_SetItem( answer, 0, PyInt_FromLong(room.grid_size_x) );
+        PyList_SetItem( answer, 1, PyInt_FromLong(room.grid_size_y) );
+        PyList_SetItem( answer, 2, PyInt_FromLong(room.maximums[type] ) );
+        PyList_SetItem( answer, 3, PyInt_FromLong(room.minimums[type] ) );
+        PyList_SetItem( answer, 4, grid_list );
+      }
 
       DPRINT( std::cout << "pmAI_GetRoomGrid() end " << std::endl );
+      
+      PyGILState_Release(gstate);
       return answer;
     }
 

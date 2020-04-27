@@ -26,6 +26,7 @@ pmai_libc.pmAI_AddRoom.restype = c_int
 pmai_libc.pmAI_GetRoomPath.restype = py_object
 pmai_libc.pmAI_GetRoomGrid.restype = py_object
 pmai_libc.pmAI_GetInRoomPath.restype = py_object
+pmai_libc.pmAI_GetInRoomGraphs.restype = py_object
 
 # pmai_libc.pmAI_UpdateObjects.argtypes = [c_int, POINTER(c_void_p), POINTER(c_int), POINTER(c_int)]
 
@@ -85,9 +86,6 @@ class pmAI ():
     pmai_libc.UpdateAIObjects( obj.object_ai )
     
   def RebuildRoomGraph(self, room_id):
-    print "\n\n\n"
-    print "RebuildRoomGraph !!!!!!!!!!!!!!!!!!!", room_id
-    
     self.room_ids_for_graph_rebuild[room_id] = True
 
   def GetRoomGrid(self, room, type):
@@ -102,6 +100,10 @@ class pmAI ():
       grid += [ column ]
     # print grid
     return answer[0], answer[1], answer[2], answer[3], grid
+  
+  def GetRoomGraphs(self, room):
+    answer = pmai_libc.pmAI_GetInRoomGraphs(self.ai, room)
+    return answer
 
   def GetRoomPath(self, start_id, end_id):
     answer = pmai_libc.pmAI_GetRoomPath(self.ai, start_id, end_id)
@@ -112,7 +114,6 @@ class pmAI ():
     for room in rooms:
       start_pos_x, start_pos_y, size_x, size_y = room.GetPositionForAI()
       id = pmai_libc.pmAI_AddRoom(self.ai, start_pos_x, start_pos_y, size_x, size_y);
-      print "TADADADADA"
       room.ai_id = id
 
     print "pmAI.SetRooms() ... add rooms connections"
@@ -140,19 +141,27 @@ class pmAI ():
       pmai_libc.pmAI_RebuildRoomGraphs(self.ai, len(room_ids), room_ids_c )
       self.room_ids_for_graph_rebuild = {}
     
-    object_positions = (c_int * (len(objects) * 2))()
-    object_tiles     = (c_int * (len(objects)    ))()
-    object_ais       = (POINTER(ObjectAI) * (len(objects) ))()
+    object_positions  = (c_int * (len(objects) * 2))()
+    targets_positions  = (c_int  * (len(objects) * 2))()
+    targets_visibility = (c_bool * (len(objects)  ))()
+    object_tiles      = (c_int * (len(objects)    ))()
+    object_ais        = (POINTER(ObjectAI) * (len(objects) ))()
     for i, obj in enumerate( objects ) :
       object_positions[ 2*i   ] = int(obj.pos.x)
       object_positions[ 2*i+1 ] = int(obj.pos.y)
       object_tiles[i] = obj.pos_room-1 #FIXME
       object_ais[i]   = obj.object_ai 
+      
+      if obj.target and obj.check_target_visibility :
+        targets_positions[ 2*i   ] = int(obj.target.pos.x)
+        targets_positions[ 2*i+1 ] = int(obj.target.pos.y)
+      else :
+        targets_positions[ 2*i   ] = object_positions[ 2*i   ];
+        targets_positions[ 2*i+1 ] = object_positions[ 2*i+1 ];
 
     bullet_positions = (c_int * (len(bullets) * 2))()
     bullet_speeds    = (c_float * (len(bullets) * 2))()
     bullet_tiles     = (c_int * (len(bullets)    ))()
-
     for i, obj in enumerate( bullets ) :
       bullet_positions[ 2*i   ] = int(obj.pos.x)
       bullet_positions[ 2*i+1 ] = int(obj.pos.y)
@@ -163,11 +172,15 @@ class pmAI ():
     # pmAI * ai, int N_bullets, float * bullet_positions, int * bullet_rooms
     pmai_libc.pmAI_UpdateObjects(len(objects), object_ais, object_positions, object_tiles)
     pmai_libc.pmAI_Tick(self.ai, len(bullets), bullet_positions, bullet_speeds, bullet_tiles)
+    pmai_libc.pmAI_CheckIfTargetsVisible(self.ai, len(objects), object_positions, targets_positions, targets_visibility)
+    
+    for i, obj in enumerate( objects ) :
+      if obj.target and obj.check_target_visibility :
+        obj.target_visibility = targets_visibility[i]
   
   def GetInRoomPath(self, room_id, start_pos, target_pos):
     path = [ [target_pos.x, target_pos.y] ]
     path = pmai_libc.pmAI_GetInRoomPath(self.ai, room_id, int(start_pos.x), int(start_pos.y), int(target_pos.x), int(target_pos.y))
-    print path
     return path
 
 def main():
