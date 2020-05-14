@@ -177,6 +177,7 @@ class pmAI ():
     for i, obj in enumerate( objects ) :
       if obj.target and obj.check_target_visibility :
         obj.target_visibility = targets_visibility[i]
+        obj.check_target_visibility = False
   
   def GetInRoomPath(self, room_id, start_pos, target_pos):
     path = [ [target_pos.x, target_pos.y] ]
